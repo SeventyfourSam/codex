@@ -1,11 +1,11 @@
 ---
 source: tui/src/update_prompt.rs
-assertion_line: 363
+assertion_line: 369
 expression: rendered
 ---
 
   Update available ·
-  0.159.0-custom.1 → 9.9.9
+  0.159.3-custom → 9.9.9
   Release notes:
   https://github.com/Seven
   tyfourSam/codex/releases

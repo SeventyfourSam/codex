@@ -4,7 +4,7 @@ assertion_line: 1376
 expression: rendered
 ---
 ╭─────────────────────────────────────────────────────────╮
-│ ✨ Update available! 0.159.0-custom.1 -> 9.9.9          │
+│ ✨ Update available! 0.159.3-custom -> 9.9.9            │
 │ Run codex update to update.                             │
 │                                                         │
 │ See full release notes:                                 │
