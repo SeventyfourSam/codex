@@ -1,7 +1,6 @@
 name: Custom release
 
-# Push v0.159.0-custom.1 to build, or installers-v0.159.0-custom.1 to repair
-# that existing release's Windows installer without rebuilding its binaries.
+# Push vX.Y.Z-custom or vX.Y.Z-custom.N to build and publish a release.
 on:
   # 16:00 UTC is 00:00 the next day in Asia/Singapore.
   schedule:
@@ -16,9 +15,6 @@ on:
     tags:
       - "v*-custom"
       - "v*-custom.*"
-      - "installers-v*-custom"
-      - "installers-v*-custom-r*"
-      - "installers-v*-custom.*"
 
 permissions:
   contents: read
@@ -55,7 +51,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^(installers-)?v[0-9]+\.[0-9]+\.[0-9]+-custom(\.(0|[1-9][0-9]*))?(-r[1-9][0-9]*)?$ ]]; then
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-custom(\.(0|[1-9][0-9]*))?$ ]]; then
             echo 'Invalid custom release tag' >&2
             exit 1
           fi
@@ -84,7 +80,7 @@ jobs:
 
   build:
     needs: prepare
-    if: needs.prepare.outputs.release_tag != '' && !startsWith(needs.prepare.outputs.release_tag, 'installers-')
+    if: needs.prepare.outputs.release_tag != ''
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
@@ -321,78 +317,3 @@ jobs:
               --notes "Custom CLI packages for macOS arm64 and Windows x64. Extract the complete archive and run the executable under bin/. Developer ID signing and notarization are not included." \
               ./*.tar.gz ./*.zip install.sh install.ps1 SHA256SUMS
           fi
-
-  repair-windows-installer:
-    needs: prepare
-    if: startsWith(needs.prepare.outputs.release_tag, 'installers-')
-    runs-on: windows-2025
-    timeout-minutes: 20
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      RELEASE_REPO: ${{ github.repository }}
-      REPAIR_TAG: ${{ needs.prepare.outputs.release_tag }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: refs/tags/${{ needs.prepare.outputs.release_tag }}
-          persist-credentials: false
-
-      - name: Download and verify the existing Windows package
-        shell: pwsh
-        run: |
-          if ($env:REPAIR_TAG -cnotmatch '^installers-(v[0-9]+\.[0-9]+\.[0-9]+-custom(?:\.(0|[1-9][0-9]*))?)(-r[1-9][0-9]*)?$') { throw 'Invalid installer repair tag.' }
-          $tag = $Matches[1]
-          $version = $tag.Substring(1)
-          $asset = "codex-$version-x86_64-pc-windows-msvc.zip"
-          gh release download $tag --repo $env:RELEASE_REPO --pattern $asset --pattern SHA256SUMS --dir dist
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to download existing release.' }
-          $pattern = '^([a-fA-F0-9]{64})  ' + [regex]::Escape($asset) + '$'
-          $digests = @(Get-Content dist/SHA256SUMS | Where-Object { $_ -cmatch $pattern } | ForEach-Object { [regex]::Match($_, $pattern).Groups[1].Value })
-          if ($digests.Count -ne 1 -or (Get-FileHash "dist/$asset" -Algorithm SHA256).Hash -ine $digests[0]) { throw 'Package checksum mismatch.' }
-          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
-          "CUSTOM_VERSION=$version" >> $env:GITHUB_ENV
-          "WINDOWS_ARCHIVE=dist/$asset" >> $env:GITHUB_ENV
-
-      - name: Test Windows PowerShell 5.1
-        shell: powershell
-        run: |
-          try {
-            ./scripts/install/test_custom_install_platform.ps1
-            ./scripts/install/test_custom_update.ps1
-            ./scripts/install/test_custom_install.ps1 -Archive "$env:WINDOWS_ARCHIVE" -Version "$env:CUSTOM_VERSION"
-          } catch {
-            $message = $_.Exception.Message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-            Write-Host "::error::$message"
-            throw
-          }
-
-      - name: Test PowerShell 7
-        shell: pwsh
-        run: |
-          ./scripts/install/test_custom_install_platform.ps1
-          ./scripts/install/test_custom_update.ps1
-          ./scripts/install/test_custom_install.ps1 -Archive "$env:WINDOWS_ARCHIVE" -Version "$env:CUSTOM_VERSION"
-
-      - name: Replace only the installer and its checksum
-        shell: pwsh
-        run: |
-          Copy-Item scripts/install/custom-install.ps1 dist/install.ps1
-          $sums = @(Get-Content dist/SHA256SUMS)
-          if (@($sums | Where-Object { $_ -cmatch '^[a-fA-F0-9]{64}  install\.ps1$' }).Count -ne 1) { throw 'Missing or ambiguous installer checksum.' }
-          $digest = (Get-FileHash dist/install.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
-          $sums = $sums | ForEach-Object { if ($_ -cmatch '^[a-fA-F0-9]{64}  install\.ps1$') { "$digest  install.ps1" } else { $_ } }
-          [IO.File]::WriteAllText((Join-Path $PWD 'dist/SHA256SUMS'), ($sums -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
-          gh release upload $env:RELEASE_TAG --repo $env:RELEASE_REPO --clobber dist/install.ps1 dist/SHA256SUMS
-          if ($LASTEXITCODE -ne 0) { throw 'Installer upload failed.' }
-
-      - name: Verify the published installer on Windows PowerShell 5.1
-        shell: powershell
-        run: |
-          $env:CODEX_HOME = Join-Path $env:RUNNER_TEMP 'published-installer-home'
-          $env:CODEX_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'published-installer-bin'
-          $env:CODEX_RELEASE = $env:CUSTOM_VERSION
-          Invoke-RestMethod -TimeoutSec 30 "https://github.com/$env:RELEASE_REPO/releases/download/$env:RELEASE_TAG/install.ps1?verify=$env:GITHUB_RUN_ID" | Invoke-Expression
-          $binary = Join-Path $env:CODEX_INSTALL_DIR 'codex.exe'
-          if ((& $binary --custom) -cne "codex-cli $env:CUSTOM_VERSION") { throw 'Published installer installed the wrong version.' }
