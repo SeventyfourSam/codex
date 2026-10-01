@@ -9,11 +9,12 @@ async fn rate_limit_recovery_holds_submissions_until_model_change() {
     handle_turn_started(&mut chat, "failed-turn");
     chat.queue_user_message(UserMessage::from("queued follow-up"));
     chat.on_rate_limit_error(RateLimitErrorKind::UsageLimit, "Usage exhausted".into());
+    handle_turn_completed(&mut chat, "failed-turn", /*duration_ms*/ None);
     assert!(
         std::iter::from_fn(|| events.try_recv().ok()).any(|event| matches!(
             event,
             AppEvent::RefreshRateLimits {
-                origin: crate::app_event::RateLimitRefreshOrigin::Recovery
+                origin: crate::app_event::RateLimitRefreshOrigin::TurnCompleted
             }
         ))
     );

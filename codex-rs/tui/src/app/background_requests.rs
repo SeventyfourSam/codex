@@ -101,7 +101,7 @@ impl App {
             let request = fetch_account_rate_limits(request_handle, origin);
             let result = match origin {
                 RateLimitRefreshOrigin::Recovery
-                | RateLimitRefreshOrigin::Periodic
+                | RateLimitRefreshOrigin::TurnCompleted
                 | RateLimitRefreshOrigin::ResetConsume { .. }
                 | RateLimitRefreshOrigin::ResetPicker { .. } => {
                     tokio::time::timeout(RATE_LIMIT_RESET_REQUEST_TIMEOUT, request)
@@ -794,7 +794,10 @@ pub(super) async fn fetch_account_rate_limits(
             request_id: request_id.clone(),
             params: Some(GetAccountRateLimitsParams {
                 supports_luna_reserve: true,
-                exclude_reset_credit_details: origin == RateLimitRefreshOrigin::Periodic,
+                exclude_reset_credit_details: !matches!(
+                    origin,
+                    RateLimitRefreshOrigin::ResetPicker { .. }
+                ),
             }),
         })
         .await;

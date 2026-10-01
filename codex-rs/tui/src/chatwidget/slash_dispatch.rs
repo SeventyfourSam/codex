@@ -507,19 +507,9 @@ impl ChatWidget {
             SlashCommand::Daemon => self.app_event_tx.send(AppEvent::OpenDaemonMenu),
             SlashCommand::Warnings => self.app_event_tx.send(AppEvent::OpenWarnings),
             SlashCommand::Status => {
-                if self.should_prefetch_rate_limits() {
-                    let request_id = self.next_status_refresh_request_id;
-                    self.next_status_refresh_request_id =
-                        self.next_status_refresh_request_id.wrapping_add(1);
-                    self.add_status_output(/*refreshing_rate_limits*/ true, Some(request_id));
-                    self.app_event_tx.send(AppEvent::RefreshRateLimits {
-                        origin: RateLimitRefreshOrigin::StatusCommand { request_id },
-                    });
-                } else {
-                    self.add_status_output(
-                        /*refreshing_rate_limits*/ false, /*request_id*/ None,
-                    );
-                }
+                self.add_status_output(
+                    /*refreshing_rate_limits*/ false, /*request_id*/ None,
+                );
             }
             SlashCommand::Cd => {
                 self.dispatch_command_with_args(SlashCommand::Cd, "~".to_string(), Vec::new());
@@ -779,9 +769,15 @@ impl ChatWidget {
             SlashCommand::Usage => {
                 if self.ensure_usage_command_available() {
                     match crate::analytics::TokenActivityView::parse(trimmed) {
-                        Some(view) => self
-                            .app_event_tx
-                            .send(AppEvent::OpenAnalytics { view: Some(view) }),
+                        Some(view) => {
+                            let request_id = self.take_next_rate_limit_reset_request_id();
+                            self.pending_usage_menu_rate_limit_request_id = Some(request_id);
+                            self.app_event_tx.send(AppEvent::RefreshRateLimits {
+                                origin: RateLimitRefreshOrigin::UsageMenu { request_id },
+                            });
+                            self.app_event_tx
+                                .send(AppEvent::OpenAnalytics { view: Some(view) });
+                        }
                         None => self.add_error_message(
                             "Usage: /usage [daily|weekly|cumulative]".to_string(),
                         ),

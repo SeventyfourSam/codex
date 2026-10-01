@@ -13,3 +13,11 @@ pub use resume_command::resume_command;
 pub use resume_command::resume_hint;
 pub use sandbox_mode_cli_arg::SandboxModeCliArg;
 pub use shared_options::SharedCliOptions;
+
+/// Fork version for explicit custom-build queries, independent of upstream version logic.
+/// Set `CODEX_CUSTOM_REVISION` when building to override the default revision of 1.
+pub const CUSTOM_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    "-custom.",
+    env!("CODEX_CUSTOM_REVISION")
+);

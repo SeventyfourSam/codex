@@ -86,6 +86,21 @@ fn updater_only_runs_for_stable_installer_owned_releases() {
     std::fs::remove_file(&marker).expect("pinned selection");
     assert!(!super::is_stable_standalone_release(home.path(), &managed));
 
+    let custom = standalone.join("releases/0.159.0-custom.2-aarch64-apple-darwin");
+    std::fs::rename(&release, &custom).unwrap();
+    std::fs::remove_file(&current).unwrap();
+    std::os::unix::fs::symlink(&custom, &current).unwrap();
+    std::fs::write(&marker, custom.file_name().unwrap().as_encoded_bytes()).unwrap();
+    assert!(super::is_stable_standalone_release(
+        home.path(),
+        &custom.join("bin/codex")
+    ));
+    std::fs::remove_file(&marker).unwrap();
+    assert!(!super::is_stable_standalone_release(
+        home.path(),
+        &custom.join("bin/codex")
+    ));
+
     let alpha = standalone.join("releases/0.151.0-alpha.1-aarch64-apple-darwin");
     let alpha_managed = alpha.join("bin/codex");
     std::fs::create_dir_all(alpha_managed.parent().expect("alpha bin parent"))

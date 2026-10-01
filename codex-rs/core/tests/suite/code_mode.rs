@@ -1991,6 +1991,7 @@ fn result_metadata_apps_builder(base_url: String, account_email: &str) -> TestCo
     search_capable_apps_builder(base_url)
         .with_auth(auth)
         .with_config(|config| {
+            config.analytics_enabled = Some(true);
             // Keep this mock provider ungranted to cover custom-provider filtering.
             config.model_provider.include_internal_metadata = false;
             for feature in [

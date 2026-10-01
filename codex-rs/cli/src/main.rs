@@ -137,6 +137,10 @@ struct MultitoolCli {
 
     #[clap(subcommand)]
     subcommand: Option<Subcommand>,
+
+    /// Print the custom build version.
+    #[arg(long, exclusive = true)]
+    custom: bool,
 }
 
 #[derive(Debug, clap::Subcommand)]
@@ -813,6 +817,7 @@ fn run_update_action(
             // absolute path through the system command processor.
             std::process::Command::new(command_path)
                 .args(args)
+                .env("CODEX_RELEASE", "latest")
                 .current_dir(update_cwd.path())
                 .status()?
         }
@@ -826,6 +831,7 @@ fn run_update_action(
                 .collect();
             std::process::Command::new(&command_path)
                 .args(&normalized_args)
+                .env("CODEX_RELEASE", "latest")
                 .status()?
         }
     };
@@ -865,7 +871,7 @@ fn run_update_command() -> anyhow::Result<()> {
     {
         let Some(action) = codex_tui::get_update_action() else {
             anyhow::bail!(
-                "Could not detect the Codex installation method. Please update manually: https://developers.openai.com/codex/cli/"
+                "Custom updates support only macOS arm64 and Windows x64: https://github.com/SeventyfourSam/codex/releases"
             );
         };
         run_update_action(action, /*cli_executable*/ None)
@@ -1025,12 +1031,17 @@ async fn cli_main(
     remote_control_disabled: bool,
 ) -> anyhow::Result<()> {
     let MultitoolCli {
+        custom,
         config_overrides: mut root_config_overrides,
         feature_toggles,
         remote,
         mut interactive,
         subcommand,
     } = MultitoolCli::parse();
+    if custom {
+        println!("codex-cli {}", codex_utils_cli::CUSTOM_VERSION);
+        return Ok(());
+    }
     // Retain the launch target through TUI exit, even if a launcher changes selection.
     let daemon_cli_executable = arg0_paths
         .codex_self_exe
@@ -2854,6 +2865,7 @@ mod tests {
     fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
+            custom: _,
             mut interactive,
             config_overrides: mut root_overrides,
             subcommand,
@@ -2891,6 +2903,7 @@ mod tests {
     fn finalize_fork_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
+            custom: _,
             mut interactive,
             config_overrides: mut root_overrides,
             subcommand,
@@ -2935,6 +2948,7 @@ mod tests {
     fn finalize_archive_from_args(args: &[&str]) -> (String, TuiCli, InteractiveRemoteOptions) {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
+            custom: _,
             interactive,
             config_overrides: root_overrides,
             subcommand,

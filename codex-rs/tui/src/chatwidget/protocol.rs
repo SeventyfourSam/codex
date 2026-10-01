@@ -510,6 +510,16 @@ impl ChatWidget {
             }
             TurnStatus::InProgress => {}
         }
+        if replay_kind.is_none()
+            && notification.turn.status != TurnStatus::InProgress
+            && self.should_prefetch_rate_limits()
+            && self.turn_lifecycle.usage_refreshed_turn_id.as_ref() != Some(&notification.turn.id)
+        {
+            self.turn_lifecycle.usage_refreshed_turn_id = Some(notification.turn.id.clone());
+            self.app_event_tx.send(AppEvent::RefreshRateLimits {
+                origin: RateLimitRefreshOrigin::TurnCompleted,
+            });
+        }
         if let Some(drafts) = question_drafts
             && !self.has_misalignment_policy_violation()
         {

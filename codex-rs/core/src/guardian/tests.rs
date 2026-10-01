@@ -230,6 +230,7 @@ async fn guardian_test_session_and_turn_with_base_url(
     let (mut session, mut turn) = crate::session::tests::make_session_and_context().await;
     session.thread_id = fixed_guardian_parent_session_id();
     let mut config = (*turn.config).clone();
+    config.feedback_enabled = true;
     config.model_provider.base_url = Some(format!("{base_url}/v1"));
     let config = Arc::new(config);
     let models_manager = test_support::models_manager_with_provider(

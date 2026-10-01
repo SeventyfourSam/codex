@@ -7,6 +7,16 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use semver::Version;
 use serde::Deserialize;
 
+mod custom_release;
+pub use custom_release::CUSTOM_INSTALL_UNIX;
+pub use custom_release::CUSTOM_INSTALL_WINDOWS;
+pub use custom_release::CUSTOM_RELEASE_API;
+pub use custom_release::CUSTOM_RELEASE_URL;
+pub use custom_release::CUSTOM_VERSION_CACHE;
+pub use custom_release::CustomRelease;
+pub use custom_release::custom_version_from_tag;
+pub use custom_release::parse_custom_version;
+
 const BIN_DIRNAME: &str = "bin";
 const CODE_MODE_HOST_EXECUTABLE_NAME: &str = if cfg!(windows) {
     "codex-code-mode-host.exe"

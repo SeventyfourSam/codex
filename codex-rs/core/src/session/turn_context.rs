@@ -660,10 +660,7 @@ impl TurnContext {
         config.model_reasoning_effort = reasoning_effort.clone();
 
         let available_models = models_manager
-            .list_models(
-                RefreshStrategy::OnlineIfUncached,
-                config.http_client_factory(),
-            )
+            .list_models(RefreshStrategy::Offline, config.http_client_factory())
             .await;
         let model_info = Arc::new(model_info);
         let mut selected = self.initial_settings.selected().clone();

@@ -2689,7 +2689,6 @@ async fn new_uses_active_provider_for_model_refresh() {
 async fn injected_models_manager_controls_refresh_policy() {
     let server = MockServer::start().await;
     let _ = mount_models_once(&server, ModelsResponse { models: vec![] }).await;
-    let _ = mount_models_once(&server, ModelsResponse { models: vec![] }).await;
 
     let temp_dir = tempdir().expect("tempdir");
     let mut config = test_config().await;
@@ -2737,7 +2736,7 @@ async fn injected_models_manager_controls_refresh_policy() {
 
     assert_eq!(
         server.received_requests().await.unwrap_or_default().len(),
-        2
+        1
     );
     assert!(!config.codex_home.join("models_cache.json").exists());
 }

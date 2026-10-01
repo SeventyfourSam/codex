@@ -156,7 +156,7 @@ async fn guardian_reused_reviewer_avoids_stale_catalog_lookup() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
+async fn manual_refresh_replaces_an_expired_catalog() -> Result<()> {
     let server = MockServer::start().await;
 
     let remote_model = test_remote_model(REMOTE_MODEL, /*priority*/ 1);
@@ -193,7 +193,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
     let stale_time = Utc.timestamp_opt(0, 0).single().expect("valid epoch");
     rewrite_cache_timestamp(&cache_path, stale_time).await?;
 
-    // Trigger responses with matching ETag, which should renew the cache TTL without another /models.
+    // Run inference before explicitly refreshing the old catalog.
     let response_body = sse(vec![
         ev_response_created("resp-1"),
         ev_assistant_message("msg-1", "done"),
@@ -233,15 +233,33 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
 
     let _ = wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
+    // Simulate a cache inherited from a previous launch, with no recent attempt.
+    tokio::fs::write(test.config.codex_home.join("models_refresh.json"), b"{}").await?;
+    let refreshed_models = responses::mount_models_once_with_etag(
+        &server,
+        ModelsResponse {
+            models: vec![test_remote_model(REMOTE_MODEL, /*priority*/ 1)],
+        },
+        ETAG,
+    )
+    .await;
+    models_manager
+        .list_models(
+            RefreshStrategy::Manual,
+            codex_core::test_support::default_http_client_factory(),
+        )
+        .await;
+    assert_eq!(refreshed_models.requests().len(), 1);
+
     let refreshed_cache = read_cache(&cache_path).await?;
     assert!(
         refreshed_cache.fetched_at > stale_time,
-        "cache TTL should be renewed"
+        "explicit refresh updates the cache timestamp"
     );
     assert_eq!(
         models_mock.requests().len(),
         1,
-        "/models should not refetch on matching etag"
+        "startup should fetch the initial catalog exactly once"
     );
 
     // Cached models remain usable offline.
@@ -256,7 +274,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
         offline_models
             .iter()
             .any(|preset| preset.model == REMOTE_MODEL),
-        "offline listing should use renewed cache"
+        "offline listing should use the refreshed cache"
     );
 
     Ok(())
@@ -323,7 +341,7 @@ async fn matching_models_etag_does_not_rewrite_recent_cache() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn matching_models_etag_renews_cache_after_half_its_lifetime() -> Result<()> {
+async fn frontend_startup_refreshes_the_catalog_after_a_day() -> Result<()> {
     let server = MockServer::start().await;
     let models_mock = responses::mount_models_once_with_etag(
         &server,
@@ -351,7 +369,7 @@ async fn matching_models_etag_renews_cache_after_half_its_lifetime() -> Result<(
         .await;
 
     let cache_path = test.config.codex_home.join(CACHE_FILE);
-    let fetched_at = Utc::now() - chrono::Duration::seconds(180);
+    let fetched_at = Utc::now() - chrono::Duration::hours(25);
     rewrite_cache_timestamp(&cache_path, fetched_at).await?;
 
     let response_body = sse(vec![
@@ -367,11 +385,29 @@ async fn matching_models_etag_renews_cache_after_half_its_lifetime() -> Result<(
 
     test.submit_turn("hi").await?;
 
+    // Simulate a cache inherited from a previous launch, with no recent attempt.
+    tokio::fs::write(test.config.codex_home.join("models_refresh.json"), b"{}").await?;
+    let refreshed_models = responses::mount_models_once_with_etag(
+        &server,
+        ModelsResponse {
+            models: vec![test_remote_model(REMOTE_MODEL, /*priority*/ 1)],
+        },
+        ETAG,
+    )
+    .await;
+    models_manager
+        .list_models(
+            RefreshStrategy::Startup,
+            codex_core::test_support::default_http_client_factory(),
+        )
+        .await;
+    assert_eq!(refreshed_models.requests().len(), 1);
+
     assert!(read_cache(&cache_path).await?.fetched_at > fetched_at);
     assert_eq!(
         models_mock.requests().len(),
         1,
-        "/models should not refetch on matching etag"
+        "startup should fetch the initial catalog exactly once"
     );
 
     Ok(())

@@ -106,7 +106,7 @@ enum RefreshOutcome {
 #[test_case(Input::Mail, RefreshOutcome::Failure; "mail fallback")]
 #[test_case(Input::User, RefreshOutcome::AuthTimeout; "auth timeout")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn auth_rotation_refreshes_before_turn_with_best_effort(
+async fn explicit_catalog_refresh_after_auth_rotation_preserves_turn_metadata(
     input: Input,
     outcome: RefreshOutcome,
 ) -> Result<()> {
@@ -155,7 +155,7 @@ async fn auth_rotation_refreshes_before_turn_with_best_effort(
         .await;
     let stalled_auth = Arc::new(StallingAuth::default());
     // The shared picker can replace the catalog between turns. Switching back
-    // must refresh even when this was the last identity used to start a turn.
+    // explicitly refreshes even when this was the last identity used to start a turn.
     test.thread_manager
         .auth_manager()
         .set_external_auth(Arc::new(SelectedAuth(header_auth("Bearer other"))))
@@ -177,6 +177,15 @@ async fn auth_rotation_refreshes_before_turn_with_best_effort(
         .auth_manager()
         .set_external_auth(auth)
         .await?;
+    if !stalls_auth {
+        test.thread_manager
+            .get_models_manager()
+            .raw_model_catalog(
+                RefreshStrategy::Online,
+                codex_core::test_support::default_http_client_factory(),
+            )
+            .await;
+    }
     stalled_auth.stall.store(stalls_auth, Ordering::SeqCst);
     let response = responses::mount_sse_once(&server, responses::sse_completed("done")).await;
     match input {

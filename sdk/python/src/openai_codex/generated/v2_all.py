@@ -2780,6 +2780,10 @@ class ModelListParams(BaseModel):
         int | None,
         Field(description="Optional page size; defaults to a reasonable server-side value.", ge=0),
     ] = None
+    refresh: Annotated[
+        bool | None,
+        Field(description="Explicit picker refresh; reuses catalogs fetched within the past hour."),
+    ] = None
 
 
 class ModelProviderCapabilitiesReadParams(BaseModel):

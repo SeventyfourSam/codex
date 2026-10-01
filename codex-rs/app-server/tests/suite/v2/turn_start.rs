@@ -542,7 +542,7 @@ async fn tool_call_metadata_stays_out_of_raw_response_item_notifications(
     assert_eq!(
         captured["internal_chat_message_metadata_passthrough"]["executed_tool_calls"][0]
             .get("tool_result_metadata"),
-        (analytics_enabled != Some(false)).then_some(&result_metadata),
+        (analytics_enabled == Some(true)).then_some(&result_metadata),
     );
     Ok(())
 }

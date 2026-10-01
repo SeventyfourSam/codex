@@ -1,17 +1,12 @@
 #[cfg(any(not(debug_assertions), test))]
 pub(crate) fn is_newer(latest: &str, current: &str) -> Option<bool> {
-    match (parse_version(latest), parse_version(current)) {
+    match (
+        codex_install_context::parse_custom_version(latest),
+        codex_install_context::parse_custom_version(current),
+    ) {
         (Some(l), Some(c)) => Some(l > c),
         _ => None,
     }
-}
-
-#[cfg(any(not(debug_assertions), test))]
-pub(crate) fn extract_version_from_latest_tag(latest_tag_name: &str) -> anyhow::Result<String> {
-    latest_tag_name
-        .strip_prefix("rust-v")
-        .map(str::to_owned)
-        .ok_or_else(|| anyhow::anyhow!("Failed to parse latest tag name '{latest_tag_name}'"))
 }
 
 #[cfg(any(not(debug_assertions), test))]
@@ -58,30 +53,17 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn extracts_version_from_latest_tag() {
-        assert_eq!(
-            extract_version_from_latest_tag("rust-v1.5.0").expect("failed to parse version"),
-            "1.5.0"
-        );
-    }
-
-    #[test]
-    fn latest_tag_without_prefix_is_invalid() {
-        assert!(extract_version_from_latest_tag("v1.5.0").is_err());
-    }
-
-    #[test]
     fn prerelease_version_is_not_considered_newer() {
-        assert_eq!(is_newer("0.11.0-beta.1", "0.11.0"), None);
-        assert_eq!(is_newer("1.0.0-rc.1", "1.0.0"), None);
+        assert_eq!(is_newer("0.11.0-beta.1-custom.1", "0.11.0-custom.1"), None);
+        assert_eq!(is_newer("1.0.0-rc.1-custom.1", "1.0.0-custom.1"), None);
     }
 
     #[test]
-    fn plain_semver_comparisons_work() {
-        assert_eq!(is_newer("0.11.1", "0.11.0"), Some(true));
-        assert_eq!(is_newer("0.11.0", "0.11.1"), Some(false));
-        assert_eq!(is_newer("1.0.0", "0.9.9"), Some(true));
-        assert_eq!(is_newer("0.9.9", "1.0.0"), Some(false));
+    fn custom_release_comparisons_work() {
+        assert_eq!(is_newer("0.11.1-custom.1", "0.11.0-custom.1"), Some(true));
+        assert_eq!(is_newer("0.11.0-custom.1", "0.11.1-custom.1"), Some(false));
+        assert_eq!(is_newer("1.0.0-custom.1", "0.9.9-custom.1"), Some(true));
+        assert_eq!(is_newer("0.9.9-custom.1", "1.0.0-custom.1"), Some(false));
     }
 
     #[test]
@@ -93,7 +75,7 @@ mod tests {
     #[test]
     fn whitespace_is_ignored() {
         assert_eq!(parse_version(" 1.2.3 \n"), Some((1, 2, 3)));
-        assert_eq!(is_newer(" 1.2.3 ", "1.2.2"), Some(true));
+        assert_eq!(is_newer("1.2.3-custom.1", "1.2.2-custom.1"), Some(true));
     }
 
     #[test]

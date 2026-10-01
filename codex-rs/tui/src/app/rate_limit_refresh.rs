@@ -1,17 +1,14 @@
 //! Orders full usage reads and coalesces recovery refreshes within an account/limit generation.
-//! Periodic reads share that ordering and wait while another periodic read or recovery is pending.
+//! Turn completion reads share that ordering and coalesce while a read is pending.
 
 use crate::app_event::RateLimitRefreshOrigin;
-use std::time::Duration;
-use std::time::Instant;
 
 #[derive(Default)]
 pub(super) struct RateLimitRefreshState {
     next_id: u64,
     applied_id: u64,
     recovery: Option<PendingRecovery>,
-    periodic: Option<(u64, u64)>,
-    last_requested_at: Option<Instant>,
+    post_turn: Option<(u64, u64)>,
 }
 
 struct PendingRecovery {
@@ -33,17 +30,6 @@ pub(super) enum RateLimitReadStatus {
 }
 
 impl RateLimitRefreshState {
-    pub(super) fn poll_deadline(&self, interval: Duration) -> Option<Instant> {
-        if self.periodic.is_some() || self.recovery.is_some() {
-            return None;
-        }
-        Some(
-            self.last_requested_at
-                .map(|last| last + interval)
-                .unwrap_or_else(Instant::now),
-        )
-    }
-
     pub(super) fn has_pending_recovery(&self) -> bool {
         self.recovery.is_some()
     }
@@ -53,8 +39,8 @@ impl RateLimitRefreshState {
         origin: RateLimitRefreshOrigin,
         generation: &mut u64,
     ) -> Option<(u64, u64)> {
-        if origin == RateLimitRefreshOrigin::Periodic
-            && (self.periodic.is_some() || self.recovery.is_some())
+        if origin == RateLimitRefreshOrigin::TurnCompleted
+            && (self.post_turn.is_some() || self.recovery.is_some())
         {
             return None;
         }
@@ -72,9 +58,8 @@ impl RateLimitRefreshState {
         }
         self.next_id = self.next_id.wrapping_add(1);
         let request = (self.next_id, *generation);
-        self.last_requested_at = Some(Instant::now());
-        if origin == RateLimitRefreshOrigin::Periodic {
-            self.periodic = Some(request);
+        if origin == RateLimitRefreshOrigin::TurnCompleted {
+            self.post_turn = Some(request);
         }
         // The post-reset read takes over the hold from the invalidated recovery request.
         if matches!(
@@ -89,8 +74,7 @@ impl RateLimitRefreshState {
     // Account changes and successful resets invalidate the need as well as the old response.
     pub(super) fn invalidate_recovery(&mut self) {
         self.recovery = None;
-        self.periodic = None;
-        self.last_requested_at = None;
+        self.post_turn = None;
     }
 
     pub(super) fn finish(
@@ -100,13 +84,8 @@ impl RateLimitRefreshState {
         current_generation: u64,
         status: RateLimitReadStatus,
     ) -> RateLimitRefreshOutcome {
-        if self.periodic == Some((request_id, generation)) {
-            self.periodic = None;
-        }
-        if generation == current_generation && request_id == self.next_id {
-            // Completion starts the next wait, including after failures/timeouts, so errors
-            // cannot create a tight retry loop while the account is nearly exhausted.
-            self.last_requested_at = Some(Instant::now());
+        if self.post_turn == Some((request_id, generation)) {
+            self.post_turn = None;
         }
         if self
             .recovery

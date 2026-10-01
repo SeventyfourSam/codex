@@ -291,6 +291,7 @@ async fn build_analytics_plugin_test_codex(
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_model("gpt-5.2")
         .with_config(move |config| {
+            config.analytics_enabled = Some(true);
             config.chatgpt_base_url = chatgpt_base_url;
         });
     builder.build_with_auto_env(server).await
@@ -428,7 +429,10 @@ async fn persisted_remote_plugin_command_attribution_flows_through_turn_context(
         .with_home(Arc::clone(&codex_home))
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_model("gpt-5.2")
-        .with_config(move |config| config.chatgpt_base_url = chatgpt_base_url);
+        .with_config(move |config| {
+            config.chatgpt_base_url = chatgpt_base_url;
+            config.analytics_enabled = Some(true);
+        });
     let test_codex = builder.build_with_auto_env(&server).await?;
     let codex = Arc::clone(&test_codex.codex);
     let cwd = test_codex.config.cwd.clone();

@@ -188,35 +188,6 @@ fn has_usable_workspace_credits(credits: &CreditsSnapshot) -> bool {
 }
 
 impl ChatWidget {
-    /// Poll more often near exhaustion for every ChatGPT account, independently of experiments.
-    pub(crate) fn rate_limit_refresh_interval(&self) -> Option<std::time::Duration> {
-        if !self.should_prefetch_rate_limits() {
-            return None;
-        }
-        // Ignore unrelated model buckets; watch ordinary usage and the selected model's bucket.
-        let used_percent = self
-            .rate_limit_snapshots_by_limit_id
-            .iter()
-            .filter(|(limit_id, snapshot)| {
-                limit_id.as_str() == "codex" || snapshot.limit_name == self.current_model()
-            })
-            .flat_map(|(_, snapshot)| snapshot.primary.iter().chain(snapshot.secondary.iter()))
-            .map(|window| window.used_percent)
-            .filter(|percent| percent.is_finite())
-            .max_by(f64::total_cmp)
-            .unwrap_or_default();
-        let seconds = if used_percent >= 99.0 {
-            5
-        } else if used_percent >= 90.0 {
-            15
-        } else if used_percent >= 75.0 {
-            30
-        } else {
-            60
-        };
-        Some(std::time::Duration::from_secs(seconds))
-    }
-
     pub(crate) fn hold_rate_limit_recovery(&mut self) -> bool {
         std::mem::replace(&mut self.input_queue.rate_limit_recovery_pending, true)
     }

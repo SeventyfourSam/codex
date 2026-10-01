@@ -1850,6 +1850,7 @@ async fn executor_skill_invocation_is_environment_scoped_and_deduplicated() -> R
         .with_config(move |config| {
             configure_catalog_test(config);
             config.chatgpt_base_url = chatgpt_base_url;
+            config.analytics_enabled = Some(true);
         });
     let test = builder.build_with_auto_env(&server).await?;
     test.submit_turn("Read the executor skill twice.").await?;
@@ -2531,7 +2532,10 @@ async fn production_turn_uses_provider_host_catalog_and_core_snapshot_injection(
     let mut builder = apps_enabled_builder(apps_server.chatgpt_base_url)
         .with_home(Arc::clone(&codex_home))
         .with_extensions(Arc::new(extensions.build()))
-        .with_config(configure_catalog_test);
+        .with_config(|config| {
+            configure_catalog_test(config);
+            config.analytics_enabled = Some(true);
+        });
     let test = builder.build_with_auto_env(&server).await?;
     wait_for_mcp_server(&test.codex, CODEX_APPS_MCP_SERVER_NAME).await?;
 

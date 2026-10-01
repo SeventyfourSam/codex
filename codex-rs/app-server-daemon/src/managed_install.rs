@@ -106,10 +106,11 @@ pub(crate) fn is_stable_standalone_release(codex_home: &Path, codex_bin: &Path) 
         return false;
     };
     let components: Vec<_> = version.split('.').collect();
-    components.len() == 3
-        && components.iter().all(|component| {
-            !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
-        })
+    (codex_install_context::parse_custom_version(version).is_some()
+        || components.len() == 3
+            && components.iter().all(|component| {
+                !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
+            }))
         && std::fs::read_to_string(standalone.join("auto-update-version"))
             .is_ok_and(|selected| selected == release_name)
         && std::fs::canonicalize(codex_bin).is_ok_and(|bin| bin.starts_with(&release))

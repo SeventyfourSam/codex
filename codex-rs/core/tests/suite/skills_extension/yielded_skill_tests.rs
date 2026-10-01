@@ -51,6 +51,7 @@ async fn yielded_skill_read_keeps_originating_turn_metadata() -> Result<()> {
         })
         .with_config(move |config| {
             config.chatgpt_base_url = chatgpt_base_url;
+            config.analytics_enabled = Some(true);
             config.cloud_skill_enabled = true;
             config.features.enable(Feature::CodeMode).unwrap();
             config.features.enable(Feature::CodeModeHost).unwrap();

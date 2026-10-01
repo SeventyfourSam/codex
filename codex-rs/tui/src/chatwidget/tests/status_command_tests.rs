@@ -6,32 +6,6 @@ use codex_app_server_protocol::ThreadUsageBreakdownGroup;
 use codex_utils_path_uri::PathUri;
 
 #[tokio::test]
-async fn status_command_renders_immediately_and_refreshes_rate_limits_for_chatgpt_auth() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    set_chatgpt_auth(&mut chat);
-
-    chat.dispatch_command(SlashCommand::Status);
-
-    let rendered = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => {
-            lines_to_single_string(&cell.display_lines(/*width*/ 80))
-        }
-        other => panic!("expected status output before refresh request, got {other:?}"),
-    };
-    assert!(
-        !rendered.contains("refreshing limits"),
-        "expected /status to avoid transient refresh text in terminal history, got: {rendered}"
-    );
-    let request_id = match rx.try_recv() {
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::StatusCommand { request_id },
-        }) => request_id,
-        other => panic!("expected rate-limit refresh request, got {other:?}"),
-    };
-    pretty_assertions::assert_eq!(request_id, 0);
-}
-
-#[tokio::test]
 async fn status_command_refresh_updates_cached_limits_for_future_status_outputs() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
@@ -42,16 +16,11 @@ async fn status_command_refresh_updates_cached_limits_for_future_status_outputs(
         Ok(AppEvent::InsertHistoryCell(_)) => {}
         other => panic!("expected status output before refresh request, got {other:?}"),
     }
-    let first_request_id = match rx.try_recv() {
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::StatusCommand { request_id },
-        }) => request_id,
-        other => panic!("expected rate-limit refresh request, got {other:?}"),
-    };
-
-    chat.finish_status_rate_limit_refresh(first_request_id, vec![snapshot(/*percent*/ 92.0)]);
+    chat.on_rate_limit_snapshot(Some(snapshot(/*percent*/ 92.0)));
     drain_insert_history(&mut rx);
 
+    chat.dispatch_command(SlashCommand::Status);
+    drain_insert_history(&mut rx);
     chat.dispatch_command(SlashCommand::Copy);
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_matches!(
@@ -149,31 +118,21 @@ async fn status_command_overlapping_refreshes_update_matching_cells_only() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
 
-    chat.dispatch_command(SlashCommand::Status);
+    chat.add_status_output(/*refreshing_rate_limits*/ true, Some(0));
     match rx.try_recv() {
         Ok(AppEvent::InsertHistoryCell(_)) => {}
         other => panic!("expected first status output, got {other:?}"),
     }
-    let first_request_id = match rx.try_recv() {
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::StatusCommand { request_id },
-        }) => request_id,
-        other => panic!("expected first refresh request, got {other:?}"),
-    };
+    let first_request_id = 0;
 
-    chat.dispatch_command(SlashCommand::Status);
+    chat.add_status_output(/*refreshing_rate_limits*/ true, Some(1));
     let second_rendered = match rx.try_recv() {
         Ok(AppEvent::InsertHistoryCell(cell)) => {
             lines_to_single_string(&cell.display_lines(/*width*/ 80))
         }
         other => panic!("expected second status output, got {other:?}"),
     };
-    let second_request_id = match rx.try_recv() {
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::StatusCommand { request_id },
-        }) => request_id,
-        other => panic!("expected second refresh request, got {other:?}"),
-    };
+    let second_request_id = 1;
 
     assert_ne!(first_request_id, second_request_id);
     assert!(
@@ -192,14 +151,9 @@ async fn status_command_overlapping_refreshes_update_matching_cells_only() {
 async fn account_update_rejects_stale_status_rate_limit_snapshots() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
-    chat.dispatch_command(SlashCommand::Status);
+    chat.add_status_output(/*refreshing_rate_limits*/ true, Some(0));
     assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
-    let request_id = match rx.try_recv() {
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::StatusCommand { request_id },
-        }) => request_id,
-        other => panic!("expected status refresh request, got {other:?}"),
-    };
+    let request_id = 0;
 
     chat.update_account_state(
         /*status_account_display*/ None, /*plan_type*/ None,

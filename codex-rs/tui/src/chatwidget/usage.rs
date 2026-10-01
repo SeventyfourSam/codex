@@ -16,16 +16,14 @@ const RATE_LIMIT_RESET_CONFIRMATION_VIEW_ID: &str = "rate-limit-reset-confirmati
 impl ChatWidget {
     pub(super) fn open_usage_menu(&mut self) {
         self.clear_pending_rate_limit_reset_hint();
-        let should_refresh_reset_availability = self.available_rate_limit_reset_credits == Some(0);
         self.bottom_pane
             .show_selection_view(self.usage_menu_params());
-        if should_refresh_reset_availability {
-            let request_id = self.take_next_rate_limit_reset_request_id();
-            self.pending_usage_menu_rate_limit_request_id = Some(request_id);
-            self.app_event_tx.send(AppEvent::RefreshRateLimits {
-                origin: RateLimitRefreshOrigin::UsageMenu { request_id },
-            });
-        }
+        let request_id = self.take_next_rate_limit_reset_request_id();
+        self.pending_usage_menu_rate_limit_request_id = Some(request_id);
+        self.app_event_tx.send(AppEvent::RefreshRateLimits {
+            origin: RateLimitRefreshOrigin::UsageMenu { request_id },
+        });
+
         self.request_redraw();
     }
 
@@ -562,7 +560,7 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    fn take_next_rate_limit_reset_request_id(&mut self) -> u64 {
+    pub(super) fn take_next_rate_limit_reset_request_id(&mut self) -> u64 {
         let request_id = self.next_rate_limit_reset_request_id;
         self.next_rate_limit_reset_request_id = self
             .next_rate_limit_reset_request_id

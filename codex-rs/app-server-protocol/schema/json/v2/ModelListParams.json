@@ -23,6 +23,10 @@
         "integer",
         "null"
       ]
+    },
+    "refresh": {
+      "description": "Explicit picker refresh; reuses catalogs fetched within the past hour.",
+      "type": "boolean"
     }
   },
   "title": "ModelListParams",

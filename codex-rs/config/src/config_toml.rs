@@ -517,19 +517,18 @@ pub struct ConfigToml {
     pub project_root_markers: Option<Vec<String>>,
 
     /// When `true`, checks for Codex updates on startup and surfaces update prompts.
-    /// Set to `false` only if your Codex updates are centrally managed.
-    /// Defaults to `true`.
+    /// Defaults to `false` in this fork.
     pub check_for_update_on_startup: Option<bool>,
 
     /// Legacy fallback for `tui.disable_paste_burst`. Prefer the setting under `[tui]`.
     pub disable_paste_burst: Option<bool>,
 
     /// When `false`, disables analytics across Codex product surfaces in this machine.
-    /// Defaults to `true`.
+    /// Defaults to `false`.
     pub analytics: Option<AnalyticsConfigToml>,
 
     /// When `false`, disables feedback collection across Codex product surfaces.
-    /// Defaults to `true`.
+    /// Defaults to `false`.
     pub feedback: Option<FeedbackConfigToml>,
 
     /// Settings for app-specific controls.

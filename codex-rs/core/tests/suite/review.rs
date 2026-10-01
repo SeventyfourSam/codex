@@ -952,8 +952,6 @@ async fn review_uses_custom_review_model_from_config() {
         .await
         .expect("custom review conversation should be created");
     let codex = Arc::clone(&test.codex);
-    std::fs::remove_file(codex_home.path().join("models_cache.json"))
-        .expect("initial empty model catalog should be cached");
     let mut models = codex_models_manager::bundled_models_response()
         .expect("bundled model catalog should parse");
     let model = models
@@ -965,6 +963,12 @@ async fn review_uses_custom_review_model_from_config() {
     model.node_repl_auto_review_required = true;
     model.node_repl_disabled = true;
     let models_mock = responses::mount_models_once(&server, models).await;
+    test.thread_manager
+        .list_models(
+            codex_models_manager::manager::RefreshStrategy::Online,
+            test.config.http_client_factory(),
+        )
+        .await;
 
     codex
         .submit(Op::Review {

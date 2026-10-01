@@ -6,7 +6,7 @@ expression: "render_bottom_popup(&app.chat_widget, 80)"
   Not connected to the local background server.
 
 
-› 1. Install latest public stable
+› 1. Install latest custom release
   2. Use this CLI build
 
   enter select · esc back

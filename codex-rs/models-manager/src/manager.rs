@@ -29,7 +29,7 @@ use tracing::error;
 use tracing::info;
 
 const MODEL_CACHE_FILE: &str = "models_cache.json";
-const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
+const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Remote endpoint used by the OpenAI-compatible model manager.
 ///
@@ -87,8 +87,12 @@ pub enum RefreshStrategy {
     Online,
     /// Only use cached data, never fetch from the network.
     Offline,
-    /// Use cache if available and fresh, otherwise fetch from the network.
+    /// Initialize this manager once per identity, preferring the 24-hour cache.
     OnlineIfUncached,
+    /// A new frontend startup, reusing catalogs fetched within the past 24 hours.
+    Startup,
+    /// User-requested refresh, limited to once per hour.
+    Manual,
 }
 
 impl RefreshStrategy {
@@ -97,6 +101,8 @@ impl RefreshStrategy {
             Self::Online => "online",
             Self::Offline => "offline",
             Self::OnlineIfUncached => "online_if_uncached",
+            Self::Manual => "manual",
+            Self::Startup => "startup",
         }
     }
 }
@@ -144,7 +150,7 @@ pub trait ModelsManager: fmt::Debug + Send + Sync {
         http_client_factory: HttpClientFactory,
     ) -> ModelsManagerFuture<'_, ModelsResponse>;
 
-    /// Best-effort refresh when the in-memory catalog belongs to different credentials.
+    /// Best-effort cache reload when the in-memory catalog belongs to different credentials.
     /// Static catalogs need no refresh. Failures leave the existing cache/default fallback.
     fn refresh_after_auth_change(
         &self,
@@ -240,9 +246,7 @@ pub trait ModelsManager: fmt::Debug + Send + Sync {
         )
     }
 
-    /// Refresh models if the provided ETag differs from the cached ETag.
-    ///
-    /// Uses `Online` strategy to fetch latest models when ETags differ.
+    /// Observe an inference ETag without initiating a background catalog refresh.
     fn refresh_if_new_etag(
         &self,
         etag: String,
@@ -260,6 +264,7 @@ pub type SharedModelsManager = Arc<dyn ModelsManager>;
 pub struct OpenAiModelsManager {
     remote_models: RwLock<ModelsCacheEntry>,
     cache: Option<Arc<dyn ModelsCache>>,
+    refresh_policy: crate::refresh_policy::RefreshPolicy,
     endpoint_client: SharedModelsEndpointClient,
     api_key_model_discovery_enabled: AtomicBool,
     auth_manager: Option<Arc<AuthManager>>,
@@ -280,14 +285,16 @@ impl OpenAiModelsManager {
         auth_manager: Option<Arc<AuthManager>>,
     ) -> Self {
         let cache_path = codex_home.join(MODEL_CACHE_FILE);
-        Self::new_with_optional_cache(
+        let mut manager = Self::new_with_optional_cache(
             Some(Arc::new(FileModelsCache::new(
                 cache_path,
                 DEFAULT_MODEL_CACHE_TTL,
             ))),
             endpoint_client,
             auth_manager,
-        )
+        );
+        manager.refresh_policy.path = Some(codex_home.join("models_refresh.json"));
+        manager
     }
 
     /// Construct an OpenAI-compatible model manager with caching disabled.
@@ -325,6 +332,7 @@ impl OpenAiModelsManager {
                 models: remote_models,
             }),
             cache,
+            refresh_policy: Default::default(),
             api_key_model_discovery_enabled: AtomicBool::new(false),
             endpoint_client,
             auth_manager,
@@ -374,11 +382,8 @@ impl ModelsManager for OpenAiModelsManager {
                 if identity.is_some() && self.remote_models.read().await.identity == identity {
                     return Ok(());
                 }
-                self.refresh_available_models(
-                    RefreshStrategy::OnlineIfUncached,
-                    &http_client_factory,
-                )
-                .await
+                self.refresh_available_models(RefreshStrategy::Offline, &http_client_factory)
+                    .await
             };
             // Include auth resolution and cache access in the best-effort deadline.
             if !matches!(
@@ -450,33 +455,16 @@ impl OpenAiModelsManager {
         }
     }
 
-    async fn refresh_if_new_etag(&self, etag: String, http_client_factory: HttpClientFactory) {
-        let (identity, current_etag) = {
-            let entry = self.remote_models.read().await;
-            (entry.identity.clone(), entry.etag.clone())
-        };
-        if let Some(identity) = identity
-            && Some(&identity) == self.endpoint_client.identity().as_ref()
-            && current_etag.as_deref() == Some(etag.as_str())
-        {
-            if let Some(cache) = self.cache.as_ref()
-                && let Err(err) = cache
-                    .refresh_ttl(&crate::client_version_to_whole(), &identity, &etag)
-                    .await
-            {
-                error!("failed to renew cache TTL: {err}");
-            }
-            return;
-        }
-        if let Err(err) = self
-            .refresh_available_models(RefreshStrategy::Online, &http_client_factory)
-            .await
-        {
-            error!("failed to refresh available models: {err}");
-        }
+    async fn refresh_if_new_etag(&self, _etag: String, _http_client_factory: HttpClientFactory) {
+        // Catalog refreshes are restricted to startup and explicit picker requests.
+        // Inference ETags must not extend fetched_at or initiate background traffic.
     }
 
     /// Refresh available models according to the specified strategy.
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "serialize cache checks and downloads so concurrent callers reuse the completed catalog"
+    )]
     async fn refresh_available_models(
         &self,
         refresh_strategy: RefreshStrategy,
@@ -495,7 +483,9 @@ impl OpenAiModelsManager {
         if !self.should_refresh_models().await {
             if matches!(
                 refresh_strategy,
-                RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached
+                RefreshStrategy::Offline
+                    | RefreshStrategy::OnlineIfUncached
+                    | RefreshStrategy::Startup
             ) {
                 self.try_load_cache().await;
             }
@@ -506,11 +496,37 @@ impl OpenAiModelsManager {
                 self.try_load_cache().await;
                 Ok(())
             }
-            RefreshStrategy::OnlineIfUncached => {
-                if self.try_load_cache().await {
+            RefreshStrategy::OnlineIfUncached
+            | RefreshStrategy::Startup
+            | RefreshStrategy::Manual => {
+                let mut state = self.refresh_policy.state.lock().await;
+                let cached = self.try_load_cache().await;
+                let identity = self.endpoint_client.identity().unwrap_or_default();
+                let first_startup = state.initialized.insert(identity.clone());
+                if refresh_strategy == RefreshStrategy::OnlineIfUncached && !first_startup {
                     return Ok(());
                 }
-                self.fetch_and_update_models(http_client_factory).await
+                let interval = if refresh_strategy == RefreshStrategy::Manual {
+                    Duration::from_secs(60 * 60)
+                } else {
+                    DEFAULT_MODEL_CACHE_TTL
+                };
+                let fetched_at = if cached {
+                    Some(self.remote_models.read().await.fetched_at)
+                } else {
+                    None
+                };
+                if self
+                    .refresh_policy
+                    .reserve(&mut state, identity, fetched_at, interval)
+                    .await?
+                {
+                    self.fetch_and_update_models(http_client_factory).await
+                } else {
+                    // Another terminal may have just populated the shared cache.
+                    self.try_load_cache().await;
+                    Ok(())
+                }
             }
             RefreshStrategy::Online => self.fetch_and_update_models(http_client_factory).await,
         }

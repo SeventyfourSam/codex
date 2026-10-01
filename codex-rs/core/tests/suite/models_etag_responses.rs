@@ -33,7 +33,7 @@ use pretty_assertions::assert_eq;
 use wiremock::MockServer;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch() -> Result<()> {
+async fn manual_refresh_preserves_catalog_request_metadata_and_tool_continuation() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     const ETAG_1: &str = "\"models-etag-1\"";
@@ -75,7 +75,7 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
     assert_eq!(spawn_models_mock.requests().len(), 1);
     assert_eq!(spawn_models_mock.single_request_path(), "/v1/models");
 
-    // 2) If the server sends a different X-Models-Etag on /responses, Codex refreshes /models.
+    // 2) Prepare a catalog response for a later explicit refresh.
     let refresh_models_mock = responses::mount_models_once_with_etag(
         &server,
         ModelsResponse { models: Vec::new() },
@@ -84,7 +84,7 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
     .await;
 
     // First /responses request (user message) succeeds and returns a tool call.
-    // It also includes a mismatched X-Models-Etag, which should trigger a /models refresh.
+    // The inference ETag is independent of the explicit catalog refresh.
     let first_response_body = sse(vec![
         ev_response_created("resp-1"),
         ev_exec_command_call(CALL_ID, "/bin/echo 'etag ok'"),
@@ -140,7 +140,19 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
     )
     .await;
 
-    // Assert /models was refreshed exactly once after the X-Models-Etag mismatch.
+    let cache_path = test.config.codex_home.join("models_cache.json");
+    let mut cache: serde_json::Value =
+        serde_json::from_slice(&tokio::fs::read(&cache_path).await?)?;
+    cache["fetched_at"] = serde_json::to_value(chrono::Utc::now() - chrono::Duration::hours(2))?;
+    tokio::fs::write(cache_path, serde_json::to_vec(&cache)?).await?;
+    tokio::fs::write(test.config.codex_home.join("models_refresh.json"), b"{}").await?;
+    test.thread_manager
+        .list_models(
+            codex_models_manager::manager::RefreshStrategy::Manual,
+            test.config.http_client_factory(),
+        )
+        .await;
+    // Explicit refresh still uses the supported catalog request format.
     assert_eq!(refresh_models_mock.requests().len(), 1);
     assert_eq!(refresh_models_mock.single_request_path(), "/v1/models");
     let refresh_req = refresh_models_mock

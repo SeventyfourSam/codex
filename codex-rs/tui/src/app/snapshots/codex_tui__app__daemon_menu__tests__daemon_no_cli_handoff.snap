@@ -7,7 +7,7 @@ expression: "render_bottom_popup(&app.chat_widget, 80)"
   Run the Codex CLI to manage the daemon from this menu.
 
 
-›    Install latest public stable
+›    Install latest custom release
      Use this CLI build
 
   enter select · esc back

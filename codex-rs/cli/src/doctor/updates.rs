@@ -12,8 +12,6 @@ use std::time::Duration;
 use codex_core::config::Config;
 use codex_http_client::ClientRouteClass;
 use codex_http_client::RouteAwareClientPool;
-use codex_install_context::InstallContext;
-use codex_install_context::InstallMethod;
 use http::Method;
 use serde::Deserialize;
 #[cfg(target_os = "macos")]
@@ -25,16 +23,13 @@ use super::DoctorCheck;
 use super::DoctorIssue;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use super::desktop::platform::InstalledApp;
-use super::doctor_install_context;
-use super::doctor_managed_by_npm;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use super::network;
 
 const MAX_VERSION_RESPONSE_BYTES: usize = 1024 * 1024;
 
-const VERSION_FILE_NAME: &str = "version.json";
-const GITHUB_LATEST_RELEASE_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
-const HOMEBREW_CASK_API_URL: &str = "https://formulae.brew.sh/api/cask/codex.json";
+const VERSION_FILE_NAME: &str = codex_install_context::CUSTOM_VERSION_CACHE;
+const GITHUB_LATEST_RELEASE_URL: &str = codex_install_context::CUSTOM_RELEASE_API;
 #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
 const DESKTOP_UPDATE_URL: &str = "https://persistent.oaistatic.com/codex-app-prod/appcast-x64.xml";
 #[cfg(all(target_os = "macos", not(target_arch = "x86_64")))]
@@ -51,14 +46,12 @@ const DESKTOP_UPDATE_URL: &str =
 /// warning instead of failing doctor outright; update freshness is useful
 /// support context but should not mask more direct install/config failures.
 pub(super) async fn updates_check(config: &Config) -> DoctorCheck {
-    let current_exe = std::env::current_exe().ok();
-    let install_context = doctor_install_context(current_exe.as_deref());
     let mut details = vec![
         format!(
             "check for update on startup: {}",
             config.check_for_update_on_startup
         ),
-        format!("update action: {}", update_action_label(&install_context)),
+        "update action: codex update (GitHub custom release)".to_string(),
     ];
     let version_file = config.codex_home.join(VERSION_FILE_NAME);
     push_cached_version_details(&mut details, &version_file);
@@ -66,19 +59,15 @@ pub(super) async fn updates_check(config: &Config) -> DoctorCheck {
     let mut status = CheckStatus::Ok;
     let summary = "update configuration is locally consistent".to_string();
 
-    if doctor_managed_by_npm(current_exe.as_deref()) {
-        details
-            .push("npm update target: not inspected (PATH helpers are not executed)".to_string());
-    }
     let client = RouteAwareClientPool::new_without_request_logging(
         config.http_client_factory(),
         ClientRouteClass::Other,
     );
 
-    match fetch_latest_version(&client, &install_context).await {
+    match fetch_latest_github_release_version(&client).await {
         Ok(latest_version) => {
             details.push(format!("latest version: {latest_version}"));
-            if is_newer(&latest_version, env!("CARGO_PKG_VERSION")) == Some(true) {
+            if is_newer(&latest_version, codex_utils_cli::CUSTOM_VERSION) == Some(true) {
                 details.push("latest version status: newer version is available".to_string());
             } else {
                 details.push("latest version status: current version is not older".to_string());
@@ -94,6 +83,10 @@ pub(super) async fn updates_check(config: &Config) -> DoctorCheck {
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
+#[expect(
+    dead_code,
+    reason = "Desktop updates are not part of the custom CLI distribution"
+)]
 pub(super) async fn append_desktop_update(
     checks: &mut [DoctorCheck],
     config: Option<&Config>,
@@ -387,57 +380,15 @@ fn push_cached_version_details(details: &mut Vec<String>, version_file: &Path) {
     }
 }
 
-fn update_action_label(context: &InstallContext) -> &'static str {
-    match &context.method {
-        InstallMethod::Npm => "npm install -g @openai/codex",
-        InstallMethod::Bun => "bun install -g @openai/codex",
-        InstallMethod::VitePlus => "vp install -g @openai/codex",
-        InstallMethod::Pnpm => "pnpm add -g @openai/codex",
-        InstallMethod::Brew => "brew upgrade --cask codex",
-        InstallMethod::Standalone { .. } => "standalone installer",
-        InstallMethod::Other => "manual or unknown",
-    }
-}
-
-async fn fetch_latest_version(
-    client: &RouteAwareClientPool,
-    context: &InstallContext,
-) -> Result<String, String> {
-    match &context.method {
-        InstallMethod::Brew => fetch_homebrew_cask_version(client).await,
-        InstallMethod::Npm
-        | InstallMethod::Bun
-        | InstallMethod::VitePlus
-        | InstallMethod::Pnpm
-        | InstallMethod::Standalone { .. }
-        | InstallMethod::Other => fetch_latest_github_release_version(client).await,
-    }
-}
-
 async fn fetch_latest_github_release_version(
     client: &RouteAwareClientPool,
 ) -> Result<String, String> {
-    #[derive(Deserialize)]
-    struct ReleaseInfo {
-        tag_name: String,
-    }
-
-    let info = http_get_json::<ReleaseInfo>(client, GITHUB_LATEST_RELEASE_URL).await?;
-    info.tag_name
-        .strip_prefix("rust-v")
-        .map(str::to_string)
-        .ok_or_else(|| format!("failed to parse latest tag {}", info.tag_name))
-}
-
-async fn fetch_homebrew_cask_version(client: &RouteAwareClientPool) -> Result<String, String> {
-    #[derive(Deserialize)]
-    struct HomebrewCaskInfo {
-        version: String,
-    }
-
-    http_get_json::<HomebrewCaskInfo>(client, HOMEBREW_CASK_API_URL)
-        .await
-        .map(|info| info.version)
+    let info =
+        http_get_json::<codex_install_context::CustomRelease>(client, GITHUB_LATEST_RELEASE_URL)
+            .await?;
+    info.version()
+        .map(str::to_owned)
+        .ok_or_else(|| "Incomplete or invalid custom release".to_string())
 }
 
 async fn http_get_json<T>(client: &RouteAwareClientPool, url: &str) -> Result<T, String>
@@ -471,18 +422,13 @@ where
 }
 
 fn is_newer(latest: &str, current: &str) -> Option<bool> {
-    match (parse_version(latest), parse_version(current)) {
+    match (
+        codex_install_context::parse_custom_version(latest),
+        codex_install_context::parse_custom_version(current),
+    ) {
         (Some(latest), Some(current)) => Some(latest > current),
         (Some(_), None) | (None, Some(_)) | (None, None) => None,
     }
-}
-
-fn parse_version(value: &str) -> Option<(u64, u64, u64)> {
-    let mut parts = value.trim().split('.');
-    let major = parts.next()?.parse::<u64>().ok()?;
-    let minor = parts.next()?.parse::<u64>().ok()?;
-    let patch = parts.next()?.parse::<u64>().ok()?;
-    Some((major, minor, patch))
 }
 
 #[derive(Deserialize)]
@@ -679,33 +625,8 @@ mod tests {
 
     #[test]
     fn is_newer_compares_plain_semver() {
-        assert_eq!(is_newer("1.2.4", "1.2.3"), Some(true));
-        assert_eq!(is_newer("1.2.3", "1.2.4"), Some(false));
-        assert_eq!(is_newer("1.2.3-beta.1", "1.2.2"), None);
-    }
-
-    #[test]
-    fn update_action_labels_install_contexts() {
-        assert_eq!(
-            update_action_label(&InstallContext {
-                method: InstallMethod::Npm,
-                package_layout: None,
-            }),
-            "npm install -g @openai/codex"
-        );
-        assert_eq!(
-            update_action_label(&InstallContext {
-                method: InstallMethod::Pnpm,
-                package_layout: None,
-            }),
-            "pnpm add -g @openai/codex"
-        );
-        assert_eq!(
-            update_action_label(&InstallContext {
-                method: InstallMethod::Other,
-                package_layout: None,
-            }),
-            "manual or unknown"
-        );
+        assert_eq!(is_newer("1.2.4-custom.1", "1.2.3-custom.1"), Some(true));
+        assert_eq!(is_newer("1.2.3-custom.1", "1.2.4-custom.1"), Some(false));
+        assert_eq!(is_newer("1.2.3-beta.1-custom.1", "1.2.2-custom.1"), None);
     }
 }

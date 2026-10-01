@@ -2754,7 +2754,7 @@ connectors = true
 fn write_analytics_config(codex_home: &std::path::Path, base_url: &str) -> std::io::Result<()> {
     std::fs::write(
         codex_home.join("config.toml"),
-        format!("chatgpt_base_url = \"{base_url}\"\n"),
+        format!("chatgpt_base_url = \"{base_url}\"\n\n[analytics]\nenabled = true\n"),
     )
 }
 
@@ -2848,6 +2848,9 @@ fn write_remote_plugin_catalog_config(
         format!(
             r#"
 chatgpt_base_url = "{base_url}"
+
+[analytics]
+enabled = true
 
 [features]
 plugins = true

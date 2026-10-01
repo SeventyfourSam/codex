@@ -1598,7 +1598,6 @@ impl App {
                     if !self.rate_limit_refresh_state.has_pending_recovery() {
                         self.chat_widget.finish_rate_limit_recovery();
                     }
-                    self.refresh_rate_limits(app_server, RateLimitRefreshOrigin::Periodic);
                 }
             }
             AppEvent::RefreshThreadUsage {
@@ -1662,8 +1661,8 @@ impl App {
                     RateLimitRefreshOutcome::Apply => true,
                     RateLimitRefreshOutcome::Ignore => false,
                     RateLimitRefreshOutcome::RefreshRecovery => {
-                        // Start in this account's event turn; a queued refresh could cross an account change.
-                        self.refresh_rate_limits(app_server, RateLimitRefreshOrigin::Recovery);
+                        // A newer inference update wins; wait for the next turn or /usage.
+                        self.chat_widget.finish_rate_limit_recovery();
                         false
                     }
                 };
@@ -1680,7 +1679,7 @@ impl App {
                         Vec::new()
                     };
                     match origin {
-                        RateLimitRefreshOrigin::Recovery | RateLimitRefreshOrigin::Periodic => {
+                        RateLimitRefreshOrigin::Recovery | RateLimitRefreshOrigin::TurnCompleted => {
                             for snapshot in snapshots {
                                 self.chat_widget.on_rate_limit_snapshot(Some(snapshot));
                             }
@@ -1741,7 +1740,7 @@ impl App {
                     // A failed read is not authoritative recovery. Keep the last valid banner.
                     tracing::warn!("account/rateLimits/read failed during TUI refresh: {err}");
                     match origin {
-                        RateLimitRefreshOrigin::Recovery | RateLimitRefreshOrigin::Periodic => {
+                        RateLimitRefreshOrigin::Recovery | RateLimitRefreshOrigin::TurnCompleted => {
                             // Re-evaluate snapshot age even when the backend cannot refresh it.
                             // This updates display freshness without authorizing model recovery.
                             self.chat_widget.refresh_status_surfaces();
@@ -1785,7 +1784,7 @@ impl App {
                 }
                 if (accepted || matches!(
                     origin,
-                    RateLimitRefreshOrigin::Recovery | RateLimitRefreshOrigin::ResetConsume { .. }
+                    RateLimitRefreshOrigin::Recovery | RateLimitRefreshOrigin::ResetConsume { .. } | RateLimitRefreshOrigin::TurnCompleted
                 )) && !self.rate_limit_refresh_state.has_pending_recovery()
                 {
                     self.chat_widget.finish_rate_limit_recovery();

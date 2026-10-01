@@ -124,6 +124,7 @@ requires_openai_auth = true
         .request(|request_id| ClientRequest::ModelList {
             request_id,
             params: ModelListParams {
+                refresh: false,
                 limit: Some(100),
                 include_hidden: Some(true),
                 cursor: None,
@@ -244,6 +245,7 @@ async fn list_models_returns_all_models_with_large_limit() -> Result<()> {
         .request(|request_id| ClientRequest::ModelList {
             request_id,
             params: ModelListParams {
+                refresh: false,
                 limit: Some(100),
                 cursor: None,
                 include_hidden: None,
@@ -274,6 +276,7 @@ async fn list_models_includes_hidden_models() -> Result<()> {
         .request(|request_id| ClientRequest::ModelList {
             request_id,
             params: ModelListParams {
+                refresh: false,
                 limit: Some(100),
                 cursor: None,
                 include_hidden: Some(true),
@@ -349,7 +352,7 @@ async fn list_models_uses_remote_catalog_as_source_of_truth(
                 models: remote_models.clone(),
             }),
         )
-        .expect(1..)
+        .expect(1)
         .mount_as_scoped(&server)
         .await;
 
@@ -396,6 +399,7 @@ model_catalog_url = "{server_uri}/v1/models"
         .await?;
     let request_id = mcp
         .send_list_models_request(ModelListParams {
+            refresh: false,
             limit: Some(100),
             cursor: None,
             include_hidden: None,
@@ -403,6 +407,14 @@ model_catalog_url = "{server_uri}/v1/models"
         .await?;
     let response = mcp
         .read_stream_until_response_message(RequestId::Integer(request_id))
+        .await?;
+    let manual_request = mcp
+        .send_list_models_request(ModelListParams {
+            refresh: true,
+            ..Default::default()
+        })
+        .await?;
+    mcp.read_stream_until_response_message(RequestId::Integer(manual_request))
         .await?;
     assert_eq!(
         response.result["data"][0]["upgradeInfo"]["retirementAt"],
@@ -479,6 +491,7 @@ async fn list_models_pagination_works() -> Result<()> {
             .request(|request_id| ClientRequest::ModelList {
                 request_id,
                 params: ModelListParams {
+                    refresh: false,
                     limit: Some(1),
                     cursor: cursor.clone(),
                     include_hidden: None,
@@ -515,6 +528,7 @@ async fn list_models_rejects_invalid_cursor() -> Result<()> {
 
     let request_id = mcp
         .send_list_models_request(ModelListParams {
+            refresh: false,
             limit: None,
             cursor: Some("invalid".to_string()),
             include_hidden: None,

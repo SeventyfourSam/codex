@@ -43,7 +43,7 @@ async fn next_rate_limits_loaded(
 }
 
 #[tokio::test]
-async fn luna_reserve_periodic_refresh_adapts_without_an_experiment_banner() -> Result<()> {
+async fn post_turn_refresh_coalesces_inflight_reads_and_omits_reset_details() -> Result<()> {
     let backend = MockServer::start().await;
     let home = tempdir()?;
     write_chatgpt_auth(
@@ -69,7 +69,7 @@ async fn luna_reserve_periodic_refresh_adapts_without_an_experiment_banner() -> 
     set_chatgpt_auth(&mut app.chat_widget);
     let mut session = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
-    for (used, seconds) in [(10, 60), (75, 30), (90, 15), (99, 5), (20, 60)] {
+    for used in [10, 75, 90, 99, 20] {
         backend.reset().await;
         Mock::given(method("GET"))
             .and(path("/api/codex/usage"))
@@ -89,26 +89,12 @@ async fn luna_reserve_periodic_refresh_adapts_without_an_experiment_banner() -> 
             .expect(/*r*/ 0)
             .mount(&backend)
             .await;
-        app.refresh_rate_limits(&session, RateLimitRefreshOrigin::Periodic);
+        app.refresh_rate_limits(&session, RateLimitRefreshOrigin::TurnCompleted);
         // A second timer tick while this RPC is pending must not add another request.
-        app.refresh_rate_limits(&session, RateLimitRefreshOrigin::Periodic);
-        assert!(
-            app.rate_limit_refresh_state
-                .poll_deadline(Duration::from_secs(/*secs*/ 60))
-                .is_none()
-        );
+        app.refresh_rate_limits(&session, RateLimitRefreshOrigin::TurnCompleted);
         let loaded = next_rate_limits_loaded(&mut events).await?;
         assert_matches!(&loaded, AppEvent::RateLimitsLoaded { result: Ok(_), .. });
-        let before = std::time::Instant::now();
         app.handle_event(&mut tui, &mut session, loaded).await?;
-        let after = std::time::Instant::now();
-        let interval = app.chat_widget.rate_limit_refresh_interval().unwrap();
-        assert_eq!(interval, Duration::from_secs(seconds));
-        let deadline = app
-            .rate_limit_refresh_state
-            .poll_deadline(interval)
-            .unwrap();
-        assert!(deadline >= before + interval && deadline <= after + interval);
         let requests = backend.received_requests().await.unwrap();
         let usage = requests
             .iter()
@@ -122,8 +108,7 @@ async fn luna_reserve_periodic_refresh_adapts_without_an_experiment_banner() -> 
 }
 
 #[tokio::test]
-async fn backend_banner_limit_error_refreshes_again_after_intervening_rolling_hard_stop()
--> Result<()> {
+async fn post_turn_and_manual_usage_refresh_recover_after_rolling_hard_stop() -> Result<()> {
     let server = MockServer::start().await;
     let home = tempdir()?;
     write_chatgpt_auth(
@@ -167,7 +152,7 @@ async fn backend_banner_limit_error_refreshes_again_after_intervening_rolling_ha
                     "rate_limit_reset_credits":{"available_count":0}
                 })),
         )
-        .expect(3)
+        .expect(2)
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -175,7 +160,7 @@ async fn backend_banner_limit_error_refreshes_again_after_intervening_rolling_ha
         .respond_with(
             ResponseTemplate::new(200).set_body_json(json!({"available_count":0,"credits":[]})),
         )
-        .expect(3)
+        .expect(0)
         .mount(&server)
         .await;
     let mut session = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
@@ -195,28 +180,27 @@ async fn backend_banner_limit_error_refreshes_again_after_intervening_rolling_ha
         }),
         /*replay_kind*/ None,
     );
-    let recovery = loop {
-        let event = events
-            .try_recv()
-            .expect("limit error should request recovery without a command");
-        if matches!(
-            event,
-            AppEvent::RefreshRateLimits {
-                origin: RateLimitRefreshOrigin::Recovery
-            }
-        ) {
-            break event;
-        }
-    };
+    app.chat_widget.handle_server_notification(
+        ServerNotification::TurnCompleted(codex_app_server_protocol::TurnCompletedNotification {
+            thread_id: "thread-a".into(),
+            turn: serde_json::from_value(
+                json!({"id":"turn-a", "items":[], "status":"failed", "error":null}),
+            )
+            .unwrap(),
+        }),
+        /*replay_kind*/ None,
+    );
+    let recovery = std::iter::from_fn(|| events.try_recv().ok())
+        .find(|event| {
+            matches!(
+                event,
+                AppEvent::RefreshRateLimits {
+                    origin: RateLimitRefreshOrigin::TurnCompleted
+                }
+            )
+        })
+        .expect("completed turn requests usage");
     app.handle_event(&mut tui, &mut session, recovery).await?;
-    app.handle_event(
-        &mut tui,
-        &mut session,
-        AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::Recovery,
-        },
-    )
-    .await?;
     let mut rolling = response_with_banner().rate_limits;
     rolling.rate_limit_reached_type =
         Some(codex_app_server_protocol::RateLimitReachedType::WorkspaceMemberCreditsDepleted);
@@ -241,7 +225,11 @@ async fn backend_banner_limit_error_refreshes_again_after_intervening_rolling_ha
         !render_bottom_popup(&app.chat_widget, /*width*/ 90)
             .contains("Selected model usage exhausted")
     );
-    // No second inference Error or explicit refresh: the obsolete read starts its own replacement.
+    // The rolling update invalidates the old read. A manual /usage read obtains current data.
+    app.refresh_rate_limits(
+        &session,
+        RateLimitRefreshOrigin::UsageMenu { request_id: 1 },
+    );
     let loaded = next_rate_limits_loaded(&mut events).await?;
     app.handle_event(&mut tui, &mut session, loaded).await?;
     let rendered = render_bottom_popup(&app.chat_widget, /*width*/ 90);
@@ -260,12 +248,6 @@ async fn backend_banner_limit_error_refreshes_again_after_intervening_rolling_ha
         )),
     )
     .await;
-    assert!(
-        render_bottom_popup(&app.chat_widget, /*width*/ 90)
-            .contains("Selected model usage exhausted")
-    );
-    let loaded = next_rate_limits_loaded(&mut events).await?;
-    app.handle_event(&mut tui, &mut session, loaded).await?;
     assert!(
         render_bottom_popup(&app.chat_widget, /*width*/ 90)
             .contains("Selected model usage exhausted")
@@ -292,59 +274,6 @@ fn backend_banner_recovery_follows_rolling_invalidation_without_another_error() 
         refresh.finish(first.0, first.1, epoch, RateLimitReadStatus::Succeeded),
         RateLimitRefreshOutcome::RefreshRecovery
     );
-}
-
-#[tokio::test]
-async fn backend_banner_rolling_only_recovery_holds_new_input() -> Result<()> {
-    let (mut app, _events, mut ops) = make_test_app_with_channels().await;
-    let mut session = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
-    let mut tui = crate::tui::test_support::make_test_tui()?;
-    app.chat_widget.handle_thread_session(test_thread_session(
-        ThreadId::new(),
-        app.config.cwd.to_path_buf(),
-    ));
-    set_chatgpt_auth(&mut app.chat_widget);
-    app.chat_widget.set_model("test-model-a");
-    let mut rolling = response_with_banner().rate_limits;
-    rolling.spend_control_reached = Some(true);
-    app.handle_app_server_event(
-        &session,
-        codex_app_server_client::AppServerEvent::ServerNotification(Box::new(
-            ServerNotification::AccountRateLimitsUpdated(
-                codex_app_server_protocol::AccountRateLimitsUpdatedNotification {
-                    rate_limits: rolling,
-                },
-            ),
-        )),
-    )
-    .await;
-    app.chat_widget.apply_external_edit("follow-up".into());
-    app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    assert_eq!(
-        app.chat_widget.queued_user_message_texts(),
-        vec!["follow-up"]
-    );
-    assert!(
-        !std::iter::from_fn(|| ops.try_recv().ok()).any(|op| matches!(op, Op::UserTurn { .. }))
-    );
-    app.handle_event(
-        &mut tui,
-        &mut session,
-        AppEvent::RateLimitsLoaded {
-            request_id: 1,
-            origin: RateLimitRefreshOrigin::Recovery,
-            hard_stop_generation: app.rate_limit_hard_stop_generation,
-            result: Ok(response_with_banner()),
-        },
-    )
-    .await?;
-    assert!(
-        matches!(next_user_turn_op(&mut ops), Op::UserTurn { items, .. }
-        if items == vec![UserInput::Text { text: "follow-up".into(), text_elements: Vec::new() }])
-    );
-    session.shutdown().await?;
-    Ok(())
 }
 
 #[tokio::test]

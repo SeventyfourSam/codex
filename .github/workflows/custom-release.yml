@@ -1,0 +1,381 @@
+name: Custom release
+
+# Push v0.159.0-custom.1 to build, or installers-v0.159.0-custom.1 to repair
+# that existing release's Windows installer without rebuilding its binaries.
+on:
+  # 16:00 UTC is 00:00 the next day in Asia/Singapore.
+  schedule:
+    - cron: "0 16 * * *"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing tag to rebuild; leave empty to check official stable updates"
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*-custom.*"
+      - "installers-v*-custom.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: custom-release-${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) || 'sync' }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'SeventyfourSam/codex'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    outputs:
+      release_tag: ${{ steps.tag.outputs.release_tag || steps.sync.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: custom
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Test merge and release helpers
+        run: python -m unittest discover -s .github/scripts -p test_merge_custom_upstream.py
+
+      - name: Select explicitly requested tag
+        id: tag
+        if: github.ref_type == 'tag' || inputs.release_tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^(installers-)?v[0-9]+\.[0-9]+\.[0-9]+-custom\.[0-9]+(-r[0-9]+)?$ ]]; then
+            echo 'Invalid custom release tag' >&2
+            exit 1
+          fi
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Merge latest stable and preserve custom revision
+        id: sync
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.tag.outputs.release_tag == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python .github/scripts/sync_custom_release.py
+
+      - name: Report merge conflicts
+        if: failure()
+        run: |
+          {
+            echo '### Preparation failed; see the failed step for details'
+            echo '```text'
+            git status --short
+            git diff --name-only --diff-filter=U
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.release_tag != '' && !startsWith(needs.prepare.outputs.release_tag, 'installers-')
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            archive: zip
+    defaults:
+      run:
+        shell: bash
+    env:
+      CODEX_REPO_ROOT: ${{ github.workspace }}
+      CARGO_BUILD_JOBS: "2"
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      # Keep release optimizations while reducing build and archive disk usage.
+      CARGO_PROFILE_RELEASE_DEBUG: "0"
+      CARGO_PROFILE_RELEASE_STRIP: debuginfo
+      TARGET: ${{ matrix.target }}
+      ARCHIVE_FORMAT: ${{ matrix.archive }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: refs/tags/${{ needs.prepare.outputs.release_tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Validate release version
+        id: version
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG"]
+          match = re.fullmatch(r"v([0-9]+\.[0-9]+\.[0-9]+)-custom\.(0|[1-9][0-9]*)", tag)
+          if match is None:
+              raise SystemExit("Expected a tag such as v0.159.0-custom.1")
+          cargo = tomllib.loads(Path("codex-rs/Cargo.toml").read_text())
+          version = cargo["workspace"]["package"]["version"]
+          if match[1] != version:
+              raise SystemExit(f"Tag base version {match[1]} differs from Cargo version {version}")
+          toolchain = tomllib.loads(Path("codex-rs/rust-toolchain.toml").read_text())
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"toolchain={toolchain['toolchain']['channel']}\n")
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"CODEX_CUSTOM_REVISION={match[2]}\n")
+              output.write(f"UPSTREAM_VERSION={version}\n")
+              output.write(f"CUSTOM_VERSION={tag[1:]}\n")
+          PY
+
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: ${{ steps.version.outputs.toolchain }}
+          targets: ${{ matrix.target }}
+
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/codex-package
+          key: custom-release-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'third_party/v8/*release_manifests.sha256', 'scripts/codex_package/rg', 'scripts/codex_package/codex-zsh') }}
+          restore-keys: custom-release-${{ matrix.target }}-
+
+      - name: Configure Windows compiler
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/setup-msvc-env
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Build and package
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            git config --global core.longpaths true
+            export LIBSQLITE3_FLAGS=SQLITE_DISABLE_INTRINSIC
+          fi
+          export STABLE_GIT_COMMIT="$(git rev-parse HEAD)"
+          python3 scripts/build_codex_package.py \
+            --variant codex \
+            --target "$TARGET" \
+            --cargo-profile release \
+            --package-dir package \
+            --archive-output "dist/codex-${CUSTOM_VERSION}-${TARGET}.${ARCHIVE_FORMAT}"
+
+      - name: Verify extracted package
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import tarfile
+          import tempfile
+          import zipfile
+          from pathlib import Path
+
+          archive, = Path("dist").iterdir()
+          with tempfile.TemporaryDirectory() as directory:
+              root = Path(directory)
+              if archive.suffix == ".zip":
+                  with zipfile.ZipFile(archive) as package:
+                      package.extractall(root)
+              else:
+                  with tarfile.open(archive) as package:
+                      package.extractall(root, filter="data")
+              suffix = ".exe" if os.name == "nt" else ""
+              codex = root / "bin" / f"codex{suffix}"
+              for flag, expected in [
+                  ("--version", os.environ["UPSTREAM_VERSION"]),
+                  ("--custom", os.environ["CUSTOM_VERSION"]),
+              ]:
+                  actual = subprocess.check_output([codex, flag], text=True, timeout=30).strip()
+                  if actual != f"codex-cli {expected}":
+                      raise SystemExit(f"Unexpected {flag}: {actual}")
+                  print(actual)
+              subprocess.run([codex, "--help"], check=True, timeout=30)
+              subprocess.run([root / "bin" / f"codex-code-mode-host{suffix}", "--help"], check=True, timeout=30)
+              subprocess.run([root / "codex-path" / f"rg{suffix}", "--version"], check=True, timeout=30)
+          PY
+
+      - name: Test macOS installer without network
+        if: runner.os == 'macOS'
+        run: python3 -m unittest discover -s scripts/install -p 'test_custom_*.py'
+
+      - name: Test Windows installer without network
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/install/test_custom_install_platform.ps1
+          ./scripts/install/test_custom_update.ps1
+          ./scripts/install/test_custom_install.ps1 -Archive "dist/codex-$env:CUSTOM_VERSION-$env:TARGET.zip" -Version "$env:CUSTOM_VERSION"
+
+      - name: Test Windows PowerShell 5.1 installer without network
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          ./scripts/install/test_custom_install_platform.ps1
+          ./scripts/install/test_custom_update.ps1
+          ./scripts/install/test_custom_install.ps1 -Archive "dist/codex-$env:CUSTOM_VERSION-$env:TARGET.zip" -Version "$env:CUSTOM_VERSION"
+
+      - name: Verify the built Windows CLI can update from GitHub
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $originalPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $env:CODEX_HOME = Join-Path $env:RUNNER_TEMP 'cli-update-home'
+          $env:CODEX_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'cli-update-bin'
+          try {
+            & ./package/bin/codex.exe update
+            if ($LASTEXITCODE -ne 0) { throw 'The built codex update command failed.' }
+            & (Join-Path $env:CODEX_INSTALL_DIR 'codex.exe') --custom
+            if ($LASTEXITCODE -ne 0) { throw 'The updated CLI does not run.' }
+          } finally { [Environment]::SetEnvironmentVariable('Path', $originalPath, 'User') }
+
+      - name: Verify the built macOS CLI can update from GitHub
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          test_home=$(mktemp -d)
+          trap 'rm -rf "$test_home"' EXIT
+          HOME="$test_home" ZDOTDIR="$test_home" CODEX_HOME="$test_home/.codex" CODEX_INSTALL_DIR="$test_home/bin" ./package/bin/codex update
+          "$test_home/bin/codex" --custom
+
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: custom-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: refs/tags/${{ needs.prepare.outputs.release_tag }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: custom-*
+          merge-multiple: true
+          path: dist
+
+      - name: Upload release archives and checksums
+        shell: bash
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          cp ../scripts/install/custom-install.sh install.sh
+          cp ../scripts/install/custom-install.ps1 install.ps1
+          sha256sum -- *.tar.gz *.zip install.sh install.ps1 > SHA256SUMS
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --clobber ./*.tar.gz ./*.zip install.sh install.ps1 SHA256SUMS
+          else
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --latest --title "Codex ${RELEASE_TAG#v}" \
+              --notes "Custom CLI packages for macOS arm64 and Windows x64. Extract the complete archive and run the executable under bin/. Developer ID signing and notarization are not included." \
+              ./*.tar.gz ./*.zip install.sh install.ps1 SHA256SUMS
+          fi
+
+  repair-windows-installer:
+    needs: prepare
+    if: startsWith(needs.prepare.outputs.release_tag, 'installers-')
+    runs-on: windows-2025
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_REPO: ${{ github.repository }}
+      REPAIR_TAG: ${{ needs.prepare.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: refs/tags/${{ needs.prepare.outputs.release_tag }}
+          persist-credentials: false
+
+      - name: Download and verify the existing Windows package
+        shell: pwsh
+        run: |
+          if ($env:REPAIR_TAG -cnotmatch '^installers-(v[0-9]+\.[0-9]+\.[0-9]+-custom\.(0|[1-9][0-9]*))(-r[1-9][0-9]*)?$') { throw 'Invalid installer repair tag.' }
+          $tag = $Matches[1]
+          $version = $tag.Substring(1)
+          $asset = "codex-$version-x86_64-pc-windows-msvc.zip"
+          gh release download $tag --repo $env:RELEASE_REPO --pattern $asset --pattern SHA256SUMS --dir dist
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download existing release.' }
+          $pattern = '^([a-fA-F0-9]{64})  ' + [regex]::Escape($asset) + '$'
+          $digests = @(Get-Content dist/SHA256SUMS | Where-Object { $_ -cmatch $pattern } | ForEach-Object { [regex]::Match($_, $pattern).Groups[1].Value })
+          if ($digests.Count -ne 1 -or (Get-FileHash "dist/$asset" -Algorithm SHA256).Hash -ine $digests[0]) { throw 'Package checksum mismatch.' }
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+          "CUSTOM_VERSION=$version" >> $env:GITHUB_ENV
+          "WINDOWS_ARCHIVE=dist/$asset" >> $env:GITHUB_ENV
+
+      - name: Test Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          try {
+            ./scripts/install/test_custom_install_platform.ps1
+            ./scripts/install/test_custom_update.ps1
+            ./scripts/install/test_custom_install.ps1 -Archive "$env:WINDOWS_ARCHIVE" -Version "$env:CUSTOM_VERSION"
+          } catch {
+            $message = $_.Exception.Message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Host "::error::$message"
+            throw
+          }
+
+      - name: Test PowerShell 7
+        shell: pwsh
+        run: |
+          ./scripts/install/test_custom_install_platform.ps1
+          ./scripts/install/test_custom_update.ps1
+          ./scripts/install/test_custom_install.ps1 -Archive "$env:WINDOWS_ARCHIVE" -Version "$env:CUSTOM_VERSION"
+
+      - name: Replace only the installer and its checksum
+        shell: pwsh
+        run: |
+          Copy-Item scripts/install/custom-install.ps1 dist/install.ps1
+          $sums = @(Get-Content dist/SHA256SUMS)
+          if (@($sums | Where-Object { $_ -cmatch '^[a-fA-F0-9]{64}  install\.ps1$' }).Count -ne 1) { throw 'Missing or ambiguous installer checksum.' }
+          $digest = (Get-FileHash dist/install.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sums = $sums | ForEach-Object { if ($_ -cmatch '^[a-fA-F0-9]{64}  install\.ps1$') { "$digest  install.ps1" } else { $_ } }
+          [IO.File]::WriteAllText((Join-Path $PWD 'dist/SHA256SUMS'), ($sums -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
+          gh release upload $env:RELEASE_TAG --repo $env:RELEASE_REPO --clobber dist/install.ps1 dist/SHA256SUMS
+          if ($LASTEXITCODE -ne 0) { throw 'Installer upload failed.' }
+
+      - name: Verify the published installer on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $env:CODEX_HOME = Join-Path $env:RUNNER_TEMP 'published-installer-home'
+          $env:CODEX_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'published-installer-bin'
+          $env:CODEX_RELEASE = $env:CUSTOM_VERSION
+          Invoke-RestMethod -TimeoutSec 30 "https://github.com/$env:RELEASE_REPO/releases/download/$env:RELEASE_TAG/install.ps1?verify=$env:GITHUB_RUN_ID" | Invoke-Expression
+          $binary = Join-Path $env:CODEX_INSTALL_DIR 'codex.exe'
+          if ((& $binary --custom) -cne "codex-cli $env:CUSTOM_VERSION") { throw 'Published installer installed the wrong version.' }

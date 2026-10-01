@@ -60,6 +60,11 @@ async fn explicit_update_migrates_running_and_stopped_installations() {
     for (running, local) in [(false, false), (true, false), (false, true), (true, true)] {
         let home = TempDir::new().unwrap();
         let (legacy, release) = manual_update_daemon(&home);
+        std::fs::write(
+            &legacy.settings_file,
+            r#"{"updater":{"autoUpdateEnabled":true}}"#,
+        )
+        .unwrap();
         let root = home.path().join("packages/standalone");
         if local {
             let package = root.join("releases/local-development");
@@ -419,6 +424,11 @@ async fn unsupported_request_preserves_updater_schedule() {
 
     let home = TempDir::new().expect("home");
     let (daemon, _) = manual_update_daemon(&home);
+    std::fs::write(
+        &daemon.settings_file,
+        r#"{"updater":{"autoUpdateEnabled":true}}"#,
+    )
+    .unwrap();
     let daemon = std::sync::Arc::new(daemon);
     let identity = executable_identity(&daemon.managed_codex_bin)
         .await

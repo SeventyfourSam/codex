@@ -1171,7 +1171,17 @@ async fn run_remote_plugin_install_metadata_case() -> Result<()> {
         ],
     )
     .await;
-    let test = build_test(&server, &apps_server).await?;
+    let mut builder = test_codex()
+        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_config(move |config| {
+            config.analytics_enabled = Some(true);
+            config
+                .permissions
+                .set_permission_profile(PermissionProfile::Disabled)
+                .expect("test config should allow disabled permissions");
+            configure_apps_without_search_tool(config, &apps_server.chatgpt_base_url);
+        });
+    let test = builder.build_with_auto_env(&server).await?;
     let elicitation = start_install_turn(&test, "use GitHub").await?;
     let ElicitationRequest::Form {
         meta: Some(meta), ..

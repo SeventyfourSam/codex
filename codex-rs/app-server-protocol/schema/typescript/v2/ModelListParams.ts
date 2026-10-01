@@ -4,6 +4,10 @@
 
 export type ModelListParams = {
 /**
+ * Explicit picker refresh; reuses catalogs fetched within the past hour.
+ */
+refresh?: boolean,
+/**
  * Opaque pagination cursor returned by a previous call.
  */
 cursor?: string | null,
