@@ -4,6 +4,7 @@ use pretty_assertions::assert_eq;
 #[test]
 fn custom_versions_compare_numeric_revisions_and_upstream_releases() {
     let versions = [
+        "0.159.0-custom",
         "0.159.0-custom.1",
         "0.159.0-custom.2",
         "0.159.0-custom.10",
@@ -13,11 +14,22 @@ fn custom_versions_compare_numeric_revisions_and_upstream_releases() {
         assert!(parse_custom_version(pair[0]).unwrap() < parse_custom_version(pair[1]).unwrap());
     }
     assert_eq!(
+        parse_custom_version("0.159.0-custom"),
+        parse_custom_version("0.159.0-custom.0")
+    );
+    assert_eq!(
+        custom_version_from_tag("v0.159.0-custom"),
+        Some("0.159.0-custom")
+    );
+    assert_eq!(
         custom_version_from_tag("v0.159.0-custom.2"),
         Some("0.159.0-custom.2")
     );
     for version in [
         "0.159.0",
+        "0.159.0-custom.",
+        "0.159.0-customx",
+        "0.159.0-custom+dev",
         "0.159.0-custom.01",
         "0.159.0-custom.1+dev",
         "0.159.0.1-custom.2",
@@ -28,6 +40,20 @@ fn custom_versions_compare_numeric_revisions_and_upstream_releases() {
         assert_eq!(parse_custom_version(version), None, "{version}");
     }
     assert_eq!(custom_version_from_tag("rust-v0.159.0"), None);
+}
+
+#[test]
+fn unnumbered_release_uses_unnumbered_assets() {
+    let release: CustomRelease = serde_json::from_value(serde_json::json!({
+        "tag_name": "v0.159.0-custom", "draft": false, "prerelease": false,
+        "assets": [
+            {"name": "codex-0.159.0-custom-aarch64-apple-darwin.tar.gz"},
+            {"name": "codex-0.159.0-custom-x86_64-pc-windows-msvc.zip"},
+            {"name": "SHA256SUMS"}
+        ]
+    }))
+    .unwrap();
+    assert_eq!(release.version(), Some("0.159.0-custom"));
 }
 
 #[test]

@@ -3,12 +3,12 @@
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tarfile
 import tempfile
 import unittest
+from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("custom-install.sh").resolve()
 REPO = "https://github.com/SeventyfourSam/codex"
@@ -76,7 +76,7 @@ else:
             '  directory=$(cd "$(dirname "$binary")" && pwd -P)\n'
             '  case "$directory" in */release/*) ;; *) exit 137;; esac\n'
             "fi\n"
-            f'case "$1" in --version) echo "codex-cli {version.split("-custom.")[0]}";; --custom) echo "codex-cli {version}";; app-server) exit 0;; *) exit 2;; esac\n',
+            f'case "$1" in --version) echo "codex-cli {version.split("-custom")[0]}";; --custom) echo "codex-cli {version}";; app-server) exit 0;; *) exit 2;; esac\n',
         )
         for file in [
             "bin/codex-code-mode-host",
@@ -109,6 +109,7 @@ else:
             ["sh", str(SCRIPT)],
             env=dict(self.env, CODEX_RELEASE="latest", **env),
             capture_output=True,
+            check=False,
             text=True,
             timeout=30,
         )
@@ -135,11 +136,33 @@ else:
             ["sh", str(SCRIPT), "--release", VERSION],
             env=self.env,
             capture_output=True,
+            check=False,
             text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(
             (self.home / ".codex/packages/standalone/auto-update-version").exists()
+        )
+
+    def test_install_unnumbered_revision_zero(self):
+        version = "0.159.0-custom"
+        self.make_release(version)
+        result = subprocess.run(
+            ["sh", str(SCRIPT), "--release", version],
+            env=self.env,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        binary = self.home / "bin/codex"
+        self.assertEqual(
+            subprocess.check_output([binary, "--custom"], text=True),
+            f"codex-cli {version}\n",
+        )
+        self.assertEqual(
+            subprocess.check_output([binary, "--version"], text=True),
+            "codex-cli 0.159.0\n",
         )
 
     def test_bad_checksum_keeps_previous_selection(self):

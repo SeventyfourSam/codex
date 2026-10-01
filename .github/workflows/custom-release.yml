@@ -14,7 +14,10 @@ on:
         type: string
   push:
     tags:
+      - "v*-custom"
       - "v*-custom.*"
+      - "installers-v*-custom"
+      - "installers-v*-custom-r*"
       - "installers-v*-custom.*"
 
 permissions:
@@ -52,7 +55,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^(installers-)?v[0-9]+\.[0-9]+\.[0-9]+-custom\.[0-9]+(-r[0-9]+)?$ ]]; then
+          if [[ ! "$RELEASE_TAG" =~ ^(installers-)?v[0-9]+\.[0-9]+\.[0-9]+-custom(\.(0|[1-9][0-9]*))?(-r[1-9][0-9]*)?$ ]]; then
             echo 'Invalid custom release tag' >&2
             exit 1
           fi
@@ -129,9 +132,9 @@ jobs:
           from pathlib import Path
 
           tag = os.environ["RELEASE_TAG"]
-          match = re.fullmatch(r"v([0-9]+\.[0-9]+\.[0-9]+)-custom\.(0|[1-9][0-9]*)", tag)
+          match = re.fullmatch(r"v([0-9]+\.[0-9]+\.[0-9]+)-custom(?:\.(0|[1-9][0-9]*))?", tag)
           if match is None:
-              raise SystemExit("Expected a tag such as v0.159.0-custom.1")
+              raise SystemExit("Expected vX.Y.Z-custom or vX.Y.Z-custom.N")
           cargo = tomllib.loads(Path("codex-rs/Cargo.toml").read_text())
           version = cargo["workspace"]["package"]["version"]
           if match[1] != version:
@@ -140,7 +143,7 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write(f"toolchain={toolchain['toolchain']['channel']}\n")
           with open(os.environ["GITHUB_ENV"], "a") as output:
-              output.write(f"CODEX_CUSTOM_REVISION={match[2]}\n")
+              output.write(f"CODEX_CUSTOM_REVISION={match[2] or ''}\n")
               output.write(f"UPSTREAM_VERSION={version}\n")
               output.write(f"CUSTOM_VERSION={tag[1:]}\n")
           PY
@@ -236,8 +239,22 @@ jobs:
           ./scripts/install/test_custom_update.ps1
           ./scripts/install/test_custom_install.ps1 -Archive "dist/codex-$env:CUSTOM_VERSION-$env:TARGET.zip" -Version "$env:CUSTOM_VERSION"
 
+      - name: Check whether a previous release is downloadable
+        id: previous
+        run: |
+          set -euo pipefail
+          installer=install.sh
+          if [[ "$RUNNER_OS" == Windows ]]; then installer=install.ps1; fi
+          status=$(curl --silent --show-error --location --head --output /dev/null --write-out '%{http_code}' \
+            "https://github.com/SeventyfourSam/codex/releases/latest/download/$installer")
+          case "$status" in
+            200) echo 'available=true' >> "$GITHUB_OUTPUT" ;;
+            404) echo '::notice::No downloadable previous release; local package installation tests still apply.' ;;
+            *) echo "Unexpected installer HTTP status: $status" >&2; exit 1 ;;
+          esac
+
       - name: Verify the built Windows CLI can update from GitHub
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.previous.outputs.available == 'true'
         shell: powershell
         run: |
           $originalPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -251,7 +268,7 @@ jobs:
           } finally { [Environment]::SetEnvironmentVariable('Path', $originalPath, 'User') }
 
       - name: Verify the built macOS CLI can update from GitHub
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.previous.outputs.available == 'true'
         run: |
           set -euo pipefail
           test_home=$(mktemp -d)
@@ -325,7 +342,7 @@ jobs:
       - name: Download and verify the existing Windows package
         shell: pwsh
         run: |
-          if ($env:REPAIR_TAG -cnotmatch '^installers-(v[0-9]+\.[0-9]+\.[0-9]+-custom\.(0|[1-9][0-9]*))(-r[1-9][0-9]*)?$') { throw 'Invalid installer repair tag.' }
+          if ($env:REPAIR_TAG -cnotmatch '^installers-(v[0-9]+\.[0-9]+\.[0-9]+-custom(?:\.(0|[1-9][0-9]*))?)(-r[1-9][0-9]*)?$') { throw 'Invalid installer repair tag.' }
           $tag = $Matches[1]
           $version = $tag.Substring(1)
           $asset = "codex-$version-x86_64-pc-windows-msvc.zip"

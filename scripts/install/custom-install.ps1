@@ -15,8 +15,8 @@ if ($Release -eq 'latest') {
     if (-not $uri.AbsoluteUri.StartsWith($prefix, [StringComparison]::Ordinal)) { throw 'Invalid latest release redirect.' }
     $version = $uri.AbsoluteUri.Substring($prefix.Length)
 } else { $version = $Release -creplace '^v', '' }
-if ($version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-custom\.(0|[1-9][0-9]*)$') { throw 'Expected x.y.z-custom.N.' }
-$base = $version -replace '-custom\..*$', ''
+if ($version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-custom(\.(0|[1-9][0-9]*))?$') { throw 'Expected x.y.z-custom or x.y.z-custom.N.' }
+$base = $version -replace '-custom(?:\..*)?$', ''
 $name = "$version-x86_64-pc-windows-msvc"
 $asset = "codex-$name.zip"
 $homeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }

@@ -150,7 +150,8 @@ class MergeUpstreamTests(unittest.TestCase):
         )
 
     def prepare_sync(self, revision=4):
-        self.git("tag", f"v0.159.0-custom.{revision}")
+        suffix = "" if revision is None else f".{revision}"
+        self.git("tag", f"v0.159.0-custom{suffix}")
         remote = Path.cwd() / ".git" / "origin.git"
         self.git("init", "--bare", str(remote))
         self.git("remote", "add", "origin", str(remote))
@@ -223,6 +224,31 @@ class MergeUpstreamTests(unittest.TestCase):
         self.git("tag", "v0.159.0-custom.5")
         self.release()
         self.assertEqual(self.sync_release("0.159.1"), "v0.159.1-custom.5")
+
+    def test_sync_unnumbered_revision_upgrades_and_retries_original_tag(self):
+        self.prepare_sync(revision=None)
+        self.release()
+        tag = self.sync_release("0.159.1")
+        self.assertEqual(tag, "v0.159.1-custom")
+        head = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.git("rev-parse", f"{tag}^{{commit}}"), head)
+        self.assertEqual(self.sync_release("0.159.1"), tag)
+        self.assertEqual(
+            self.git("ls-remote", "origin", f"refs/tags/{tag}^{{}}"),
+            f"{head}\trefs/tags/{tag}^{{}}",
+        )
+
+    def test_sync_explicit_zero_retries_and_preserves_spelling(self):
+        self.prepare_sync(revision=0)
+        self.assertEqual(self.sync_release("0.159.0"), "v0.159.0-custom.0")
+        self.release()
+        self.assertEqual(self.sync_release("0.159.1"), "v0.159.1-custom.0")
+
+    def test_sync_numbered_revision_supersedes_unnumbered(self):
+        self.prepare_sync(revision=None)
+        self.git("tag", "v0.159.0-custom.1")
+        self.release()
+        self.assertEqual(self.sync_release("0.159.1"), "v0.159.1-custom.1")
 
     def test_sync_after_squash_preserves_recorded_revision(self):
         self.prepare_sync()

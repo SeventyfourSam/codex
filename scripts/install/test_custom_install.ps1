@@ -33,7 +33,7 @@ try {
     if ($fixtureDownloads.Count -ne 2) { throw 'Repeated install downloaded the package again.' }
     $binary = Join-Path $env:CODEX_INSTALL_DIR 'codex.exe'
     if ((& $binary --custom) -cne "codex-cli $Version") { throw 'Wrong installed custom version.' }
-    if ((& $binary --version) -cne "codex-cli $($Version -replace '-custom\..*$', '')") { throw 'Upstream version changed.' }
+    if ((& $binary --version) -cne "codex-cli $($Version -replace '-custom(?:\..*)?$', '')") { throw 'Upstream version changed.' }
     $env:CODEX_HOME = Join-Path $temp 'failed-home'
     $root = Join-Path $env:CODEX_HOME 'packages\standalone'
     $old = Join-Path $root 'releases\old'

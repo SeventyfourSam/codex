@@ -16,8 +16,8 @@ if [ "$release" = latest ]; then
   url=$(curl -fsSL --connect-timeout 10 --max-time 30 -I -o /dev/null -w '%{url_effective}' "$repo/releases/latest")
   case "$url" in "$repo/releases/tag/v"*) version=${url#"$repo/releases/tag/v"};; *) echo 'Invalid latest release redirect.' >&2; exit 1;; esac
 else version=${release#v}; fi
-printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-custom\.(0|[1-9][0-9]*)$' || { echo 'Expected x.y.z-custom.N.' >&2; exit 1; }
-base=${version%-custom.*}
+printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-custom(\.(0|[1-9][0-9]*))?$' || { echo 'Expected x.y.z-custom or x.y.z-custom.N.' >&2; exit 1; }
+base=${version%-custom*}
 target=aarch64-apple-darwin
 name=$version-$target
 codex_home=${CODEX_HOME:-$HOME/.codex}

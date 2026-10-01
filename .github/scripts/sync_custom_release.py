@@ -37,19 +37,21 @@ def version_tuple(version: str) -> tuple[int, ...]:
     return tuple(map(int, version.split(".")))
 
 
-def latest_custom_tag(tags: list[str]) -> tuple[str, int]:
+def latest_custom_tag(tags: list[str]) -> tuple[str, int, str]:
     releases = []
     for tag in tags:
         if match := re.fullmatch(
-            r"v([0-9]+\.[0-9]+\.[0-9]+)-custom\.(0|[1-9][0-9]*)", tag
+            r"v([0-9]+\.[0-9]+\.[0-9]+)-custom(?:\.(0|[1-9][0-9]*))?", tag
         ):
-            releases.append((version_tuple(match[1]), int(match[2]), match[1]))
+            releases.append(
+                (version_tuple(match[1]), int(match[2] or "0"), match[1], tag)
+            )
     if not releases:
         raise ValueError(
             "Publish an initial custom tag before enabling automatic upgrades"
         )
-    _, revision, version = max(releases)
-    return version, revision
+    _, revision, version, tag = max(releases)
+    return version, revision, tag
 
 
 def sync_release(repository: str) -> str:
@@ -72,14 +74,17 @@ def sync_release(repository: str) -> str:
     )
     if target < current:
         return ""
-    tags = git("tag", "--merged", "HEAD", "--list", "v*-custom.*").splitlines()
+    tags = git("tag", "--merged", "HEAD", "--list", "v*-custom*").splitlines()
     # Squashing custom history detaches the earlier release tags. Retain the
     # last published revision until a newer tag is reachable from this branch.
     baseline = Path(".github/custom-release-baseline")
     if baseline.is_file():
         tags.append(baseline.read_text(encoding="utf-8").strip())
-    previous, revision = latest_custom_tag(tags)
-    tag = f"v{version}-custom.{revision}"
+    previous, revision, previous_tag = latest_custom_tag(tags)
+    # Preserve the actual spelling, including explicit .0, when retrying or
+    # carrying a revision forward. Missing revision numbers compare as zero.
+    suffix = previous_tag.removeprefix(f"v{previous}")
+    tag = f"v{version}{suffix}"
     if target == current:
         # Retry an existing tag's incomplete build, never tag unpublished custom
         # commits just because the stable-release poll ran again.

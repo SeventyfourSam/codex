@@ -42,7 +42,10 @@ impl CustomRelease {
 
 /// Parse the upstream release and numeric fork revision without changing protocol versions.
 pub fn parse_custom_version(version: &str) -> Option<[u64; 4]> {
-    let (base, revision) = version.split_once("-custom.")?;
+    let (base, revision) = match version.strip_suffix("-custom") {
+        Some(base) => (base, "0"),
+        None => version.split_once("-custom.")?,
+    };
     let mut components = base.split('.').chain(std::iter::once(revision));
     let mut parsed = [0; 4];
     for value in &mut parsed {

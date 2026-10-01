@@ -15,9 +15,6 @@ pub use sandbox_mode_cli_arg::SandboxModeCliArg;
 pub use shared_options::SharedCliOptions;
 
 /// Fork version for explicit custom-build queries, independent of upstream version logic.
-/// Set `CODEX_CUSTOM_REVISION` when building to override the default revision of 1.
-pub const CUSTOM_VERSION: &str = concat!(
-    env!("CARGO_PKG_VERSION"),
-    "-custom.",
-    env!("CODEX_CUSTOM_REVISION")
-);
+/// Unset or empty `CODEX_CUSTOM_REVISION` produces `-custom` (revision zero).
+/// An explicit revision preserves the numbered `-custom.N` spelling.
+pub const CUSTOM_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), env!("CODEX_CUSTOM_SUFFIX"));
