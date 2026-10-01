@@ -982,6 +982,12 @@ See the Codex keymap documentation for supported actions and examples."
         );
         app.refresh_startup_skills(&app_server);
         if requires_openai_auth && has_chatgpt_account {
+            crate::security_setup::prefetch(
+                &app.config,
+                &app_server,
+                app.app_event_tx.clone(),
+                app.chat_widget.security_setup_request_id,
+            );
             crate::daybreak::prefetch_notice(
                 &app.config,
                 &app_server,
