@@ -1,4 +1,5 @@
 name: Custom release
+run-name: Custom release - ${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) || 'check upstream' }}
 
 # Push vX.Y.Z-custom or vX.Y.Z-custom.N to build and publish a release.
 on:
@@ -20,18 +21,42 @@ permissions:
   contents: read
 
 concurrency:
-  group: custom-release-${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) || 'sync' }}
+  # A tag's short dispatch run must not hold the actual build's concurrency slot.
+  group: custom-release-${{ github.event_name == 'push' && format('dispatch-{0}', github.ref_name) || inputs.release_tag || 'sync' }}
   cancel-in-progress: false
 
 jobs:
+  dispatch:
+    if: github.repository == 'SeventyfourSam/codex' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Start release on custom to share caches between tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-custom(\.(0|[1-9][0-9]*))?$ ]]; then
+            echo 'Invalid custom release tag' >&2
+            exit 1
+          fi
+          gh workflow run custom-release.yml --repo "$GITHUB_REPOSITORY" \
+            --ref custom --field "release_tag=$RELEASE_TAG"
+          echo "Dispatched $RELEASE_TAG to custom; follow the workflow_dispatch run for build results." >> "$GITHUB_STEP_SUMMARY"
+
   prepare:
-    if: github.repository == 'SeventyfourSam/codex'
+    if: github.repository == 'SeventyfourSam/codex' && github.ref == 'refs/heads/custom' && github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
     outputs:
       release_tag: ${{ steps.tag.outputs.release_tag || steps.sync.outputs.release_tag }}
+      release_sha: ${{ steps.commit.outputs.release_sha }}
+      cache_config: ${{ steps.commit.outputs.cache_config }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -67,6 +92,20 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           python .github/scripts/sync_custom_release.py
 
+      - name: Pin the release commit
+        id: commit
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.release_tag || steps.sync.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$RELEASE_TAG" ]]; then exit 0; fi
+          release_sha=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
+          git merge-base --is-ancestor "$release_sha" HEAD
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          # Hash the workflow being executed, not the older copy in the release tag.
+          cache_config=$(git show "$GITHUB_SHA:.github/workflows/custom-release.yml" | sha256sum | cut -d ' ' -f 1)
+          echo "cache_config=$cache_config" >> "$GITHUB_OUTPUT"
+
       - name: Report merge conflicts
         if: failure()
         run: |
@@ -91,15 +130,17 @@ jobs:
           - runner: macos-15
             target: aarch64-apple-darwin
             archive: tar.gz
+            jobs: "2"
           - runner: windows-2025
             target: x86_64-pc-windows-msvc
             archive: zip
+            jobs: "4"
     defaults:
       run:
         shell: bash
     env:
       CODEX_REPO_ROOT: ${{ github.workspace }}
-      CARGO_BUILD_JOBS: "2"
+      CARGO_BUILD_JOBS: ${{ matrix.jobs }}
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
       # Keep release optimizations while reducing build and archive disk usage.
       CARGO_PROFILE_RELEASE_DEBUG: "0"
@@ -111,7 +152,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: refs/tags/${{ needs.prepare.outputs.release_tag }}
+          ref: ${{ needs.prepare.outputs.release_sha }}
           persist-credentials: false
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -149,7 +190,9 @@ jobs:
           toolchain: ${{ steps.version.outputs.toolchain }}
           targets: ${{ matrix.target }}
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      - name: Restore dependency downloads
+        id: downloads
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ~/.cargo/registry
@@ -157,6 +200,16 @@ jobs:
             ${{ runner.temp }}/codex-package
           key: custom-release-${{ matrix.target }}-${{ hashFiles('codex-rs/Cargo.lock', 'third_party/v8/*release_manifests.sha256', 'scripts/codex_package/rg', 'scripts/codex_package/codex-zsh') }}
           restore-keys: custom-release-${{ matrix.target }}-
+
+      - name: Restore compiled Rust artifacts
+        id: compiled
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: codex-rs/target
+          key: custom-compiled-v1-${{ matrix.runner }}-${{ matrix.target }}-${{ steps.version.outputs.toolchain }}-${{ needs.prepare.outputs.cache_config }}-${{ hashFiles('codex-rs/.cargo/config.toml') }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ needs.prepare.outputs.release_sha }}
+          restore-keys: |
+            custom-compiled-v1-${{ matrix.runner }}-${{ matrix.target }}-${{ steps.version.outputs.toolchain }}-${{ needs.prepare.outputs.cache_config }}-${{ hashFiles('codex-rs/.cargo/config.toml') }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+            custom-compiled-v1-${{ matrix.runner }}-${{ matrix.target }}-${{ steps.version.outputs.toolchain }}-${{ needs.prepare.outputs.cache_config }}-${{ hashFiles('codex-rs/.cargo/config.toml') }}-
 
       - name: Configure Windows compiler
         if: runner.os == 'Windows'
@@ -167,8 +220,10 @@ jobs:
       - name: Build and package
         env:
           TMPDIR: ${{ runner.temp }}
+          COMPILED_CACHE_RESTORED: ${{ steps.compiled.outputs.cache-matched-key != '' }}
         run: |
           set -euo pipefail
+          started_at=$(date +%s)
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             git config --global core.longpaths true
             export LIBSQLITE3_FLAGS=SQLITE_DISABLE_INTRINSIC
@@ -180,6 +235,34 @@ jobs:
             --cargo-profile release \
             --package-dir package \
             --archive-output "dist/codex-${CUSTOM_VERSION}-${TARGET}.${ARCHIVE_FORMAT}"
+          {
+            echo "### $TARGET"
+            echo "Compiled cache restored: $COMPILED_CACHE_RESTORED"
+            echo "Cargo parallel jobs: $CARGO_BUILD_JOBS"
+            echo "Build and package duration: $(( $(date +%s) - started_at )) seconds"
+            echo "Compiled artifacts size: $(du -sh codex-rs/target | cut -f 1)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Save before package smoke tests so a later validation/upload failure
+      # does not discard a successful, expensive compilation.
+      - name: Save dependency downloads
+        if: steps.downloads.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/codex-package
+          key: ${{ steps.downloads.outputs.cache-primary-key }}
+
+      - name: Save compiled Rust artifacts
+        if: steps.compiled.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: codex-rs/target
+          key: ${{ steps.compiled.outputs.cache-primary-key }}
 
       - name: Verify extracted package
         run: |
@@ -289,7 +372,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: refs/tags/${{ needs.prepare.outputs.release_tag }}
+          ref: ${{ needs.prepare.outputs.release_sha }}
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
