@@ -90,6 +90,7 @@ if ! package_complete "$destination"; then
   if [ "${CODEX_INSTALL_DAEMON_ONLY:-0}" = 1 ]; then "$stage/package/bin/codex" app-server daemon pid-update-loop --check-package-ownership; fi
   mv "$stage/package" "$destination"
 fi
+CODEX_HOME="$codex_home" "$destination/bin/codex" --initialize-custom-config
 [ ! -e "$current" ] || [ -L "$current" ] || { echo 'Refusing to replace an unmanaged current directory.' >&2; exit 1; }
 ln -s "$destination" "$root/.custom-current.$$"
 mv -fh "$root/.custom-current.$$" "$current"

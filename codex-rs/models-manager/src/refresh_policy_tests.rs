@@ -2,6 +2,26 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]
+async fn inference_etags_do_not_download_or_extend_the_catalog_cache() {
+    let home = tempdir().unwrap();
+    let endpoint = TestModelsEndpoint::new(vec![vec![remote_model(
+        "remote", "Remote", /*priority*/ 0,
+    )]]);
+    let manager = openai_manager_for_tests(home.path().to_path_buf(), endpoint.clone());
+    manager
+        .list_models(RefreshStrategy::Startup, DEFAULT_HTTP_CLIENT_FACTORY)
+        .await;
+    let path = home.path().join(MODEL_CACHE_FILE);
+    let cached = std::fs::read(&path).unwrap();
+    for etag in ["test-etag", "changed-etag"] {
+        ModelsManager::refresh_if_new_etag(&manager, etag.into(), DEFAULT_HTTP_CLIENT_FACTORY)
+            .await;
+    }
+    assert_eq!(endpoint.fetch_count(), 1);
+    assert_eq!(std::fs::read(path).unwrap(), cached);
+}
+
+#[tokio::test]
 async fn startup_and_manual_refresh_use_distinct_cache_windows() {
     for (age_hours, expected_startup, expected_manual) in
         [(0, 0, 0), (2, 0, 1), (23, 0, 1), (25, 1, 1)]

@@ -34,6 +34,16 @@ try {
     $binary = Join-Path $env:CODEX_INSTALL_DIR 'codex.exe'
     if ((& $binary --custom) -cne "codex-cli $Version") { throw 'Wrong installed custom version.' }
     if ((& $binary --version) -cne "codex-cli $($Version -replace '-custom(?:\..*)?$', '')") { throw 'Upstream version changed.' }
+    $configPath = Join-Path $env:CODEX_HOME 'config.toml'
+    $config = Get-Content -Raw $configPath
+    if ($config -notmatch '(?s)\[feedback\]\s+enabled = false') { throw 'Custom configuration was not initialized.' }
+    $current = Join-Path $env:CODEX_HOME 'packages\standalone\current'
+    $selected = (Get-Item $current).Target
+    [System.IO.File]::WriteAllText($configPath, 'invalid = [')
+    $failed = $false
+    try { & "$PSScriptRoot/custom-install.ps1" } catch { if ($_ -notmatch 'Could not initialize custom settings') { throw }; $failed = $true }
+    if (-not $failed -or (Get-Item $current).Target -ne $selected) { throw 'Invalid configuration changed the active package.' }
+    if ((Get-Content -Raw $configPath) -cne 'invalid = [') { throw 'Invalid configuration was overwritten.' }
     $env:CODEX_HOME = Join-Path $temp 'failed-home'
     $root = Join-Path $env:CODEX_HOME 'packages\standalone'
     $old = Join-Path $root 'releases\old'

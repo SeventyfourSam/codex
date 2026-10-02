@@ -141,6 +141,10 @@ struct MultitoolCli {
     /// Print the custom build version.
     #[arg(long, exclusive = true)]
     custom: bool,
+
+    /// Internal: fill missing user settings for the custom installer.
+    #[arg(long, exclusive = true, hide = true)]
+    initialize_custom_config: bool,
 }
 
 #[derive(Debug, clap::Subcommand)]
@@ -1032,6 +1036,7 @@ async fn cli_main(
 ) -> anyhow::Result<()> {
     let MultitoolCli {
         custom,
+        initialize_custom_config,
         config_overrides: mut root_config_overrides,
         feature_toggles,
         remote,
@@ -1040,6 +1045,10 @@ async fn cli_main(
     } = MultitoolCli::parse();
     if custom {
         println!("codex-cli {}", codex_utils_cli::CUSTOM_VERSION);
+        return Ok(());
+    }
+    if initialize_custom_config {
+        codex_config::initialize_custom_config(&find_codex_home()?)?;
         return Ok(());
     }
     // Retain the launch target through TUI exit, even if a launcher changes selection.
@@ -2866,6 +2875,7 @@ mod tests {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
             custom: _,
+            initialize_custom_config: _,
             mut interactive,
             config_overrides: mut root_overrides,
             subcommand,
@@ -2904,6 +2914,7 @@ mod tests {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
             custom: _,
+            initialize_custom_config: _,
             mut interactive,
             config_overrides: mut root_overrides,
             subcommand,
@@ -2949,6 +2960,7 @@ mod tests {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
             custom: _,
+            initialize_custom_config: _,
             interactive,
             config_overrides: root_overrides,
             subcommand,

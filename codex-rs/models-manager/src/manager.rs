@@ -1,3 +1,6 @@
+#[path = "custom_refresh.rs"]
+mod custom_refresh;
+
 use super::cache::FileModelsCache;
 use crate::cache::ModelsCache;
 use crate::cache::ModelsCacheEntry;
@@ -150,7 +153,7 @@ pub trait ModelsManager: fmt::Debug + Send + Sync {
         http_client_factory: HttpClientFactory,
     ) -> ModelsManagerFuture<'_, ModelsResponse>;
 
-    /// Best-effort cache reload when the in-memory catalog belongs to different credentials.
+    /// Best-effort refresh when the in-memory catalog belongs to different credentials.
     /// Static catalogs need no refresh. Failures leave the existing cache/default fallback.
     fn refresh_after_auth_change(
         &self,
@@ -246,7 +249,9 @@ pub trait ModelsManager: fmt::Debug + Send + Sync {
         )
     }
 
-    /// Observe an inference ETag without initiating a background catalog refresh.
+    /// Refresh models if the provided ETag differs from the cached ETag.
+    ///
+    /// Uses `Online` strategy to fetch latest models when ETags differ.
     fn refresh_if_new_etag(
         &self,
         etag: String,
@@ -430,6 +435,9 @@ impl ModelsManager for OpenAiModelsManager {
         etag: String,
         http_client_factory: HttpClientFactory,
     ) -> ModelsManagerFuture<'_, ()> {
+        if !self.refresh_policy.background_refresh_enabled {
+            return Box::pin(std::future::ready(()));
+        }
         Box::pin(OpenAiModelsManager::refresh_if_new_etag(
             self,
             etag,
@@ -455,16 +463,33 @@ impl OpenAiModelsManager {
         }
     }
 
-    async fn refresh_if_new_etag(&self, _etag: String, _http_client_factory: HttpClientFactory) {
-        // Catalog refreshes are restricted to startup and explicit picker requests.
-        // Inference ETags must not extend fetched_at or initiate background traffic.
+    async fn refresh_if_new_etag(&self, etag: String, http_client_factory: HttpClientFactory) {
+        let (identity, current_etag) = {
+            let entry = self.remote_models.read().await;
+            (entry.identity.clone(), entry.etag.clone())
+        };
+        if let Some(identity) = identity
+            && Some(&identity) == self.endpoint_client.identity().as_ref()
+            && current_etag.as_deref() == Some(etag.as_str())
+        {
+            if let Some(cache) = self.cache.as_ref()
+                && let Err(err) = cache
+                    .refresh_ttl(&crate::client_version_to_whole(), &identity, &etag)
+                    .await
+            {
+                error!("failed to renew cache TTL: {err}");
+            }
+            return;
+        }
+        if let Err(err) = self
+            .refresh_available_models(RefreshStrategy::Online, &http_client_factory)
+            .await
+        {
+            error!("failed to refresh available models: {err}");
+        }
     }
 
     /// Refresh available models according to the specified strategy.
-    #[expect(
-        clippy::await_holding_invalid_type,
-        reason = "serialize cache checks and downloads so concurrent callers reuse the completed catalog"
-    )]
     async fn refresh_available_models(
         &self,
         refresh_strategy: RefreshStrategy,
@@ -499,34 +524,8 @@ impl OpenAiModelsManager {
             RefreshStrategy::OnlineIfUncached
             | RefreshStrategy::Startup
             | RefreshStrategy::Manual => {
-                let mut state = self.refresh_policy.state.lock().await;
-                let cached = self.try_load_cache().await;
-                let identity = self.endpoint_client.identity().unwrap_or_default();
-                let first_startup = state.initialized.insert(identity.clone());
-                if refresh_strategy == RefreshStrategy::OnlineIfUncached && !first_startup {
-                    return Ok(());
-                }
-                let interval = if refresh_strategy == RefreshStrategy::Manual {
-                    Duration::from_secs(60 * 60)
-                } else {
-                    DEFAULT_MODEL_CACHE_TTL
-                };
-                let fetched_at = if cached {
-                    Some(self.remote_models.read().await.fetched_at)
-                } else {
-                    None
-                };
-                if self
-                    .refresh_policy
-                    .reserve(&mut state, identity, fetched_at, interval)
-                    .await?
-                {
-                    self.fetch_and_update_models(http_client_factory).await
-                } else {
-                    // Another terminal may have just populated the shared cache.
-                    self.try_load_cache().await;
-                    Ok(())
-                }
+                self.refresh_custom_cached_models(refresh_strategy, http_client_factory)
+                    .await
             }
             RefreshStrategy::Online => self.fetch_and_update_models(http_client_factory).await,
         }

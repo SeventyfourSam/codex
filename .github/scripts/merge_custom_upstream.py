@@ -109,9 +109,12 @@ def merge_release(version: str) -> None:
     )
     if merge.returncode != 0:
         conflicts = git("diff", "--name-only", "--diff-filter=U").splitlines()
-        if conflicts != [MANIFEST]:
+        if MANIFEST in conflicts:
+            resolve_version_conflict(version)
+            conflicts = git("diff", "--name-only", "--diff-filter=U").splitlines()
+        if conflicts:
             raise ValueError(f"Merge requires manual resolution: {conflicts}")
-        resolve_version_conflict(version)
+        git("rev-parse", "--verify", "MERGE_HEAD")
     if (
         tomllib.loads(Path(MANIFEST).read_text(encoding="utf-8"))["workspace"][
             "package"

@@ -119,7 +119,15 @@ class MergeUpstreamTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "manual resolution"):
             self.run_merge()
         self.assertEqual(self.git("rev-parse", "HEAD"), before)
-        self.assertIn("feature.txt", self.git("diff", "--name-only", "--diff-filter=U"))
+        self.assertEqual(
+            "feature.txt", self.git("diff", "--name-only", "--diff-filter=U")
+        )
+        self.assertEqual(
+            merge.tomllib.loads(self.manifest.read_text(encoding="utf-8"))["workspace"][
+                "package"
+            ]["version"],
+            "0.159.1",
+        )
 
     def test_dependency_conflict_does_not_commit(self):
         self.manifest.write_text(

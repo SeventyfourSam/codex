@@ -14,6 +14,8 @@ use tokio::sync::Mutex;
 
 #[derive(Debug, Default)]
 pub(crate) struct RefreshPolicy {
+    // Gate the public entry point instead of replacing upstream's ETag implementation.
+    pub(crate) background_refresh_enabled: bool,
     pub(crate) path: Option<PathBuf>,
     pub(crate) state: Mutex<RefreshState>,
 }

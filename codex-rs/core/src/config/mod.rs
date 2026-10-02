@@ -1119,7 +1119,8 @@ pub struct Config {
     pub notices: Notice,
 
     /// When `true`, checks for Codex updates on startup and surfaces update prompts.
-    /// Defaults to `false` in this fork.
+    /// Set to `false` only if your Codex updates are centrally managed.
+    /// Defaults to `true`.
     pub check_for_update_on_startup: bool,
 
     /// When true, disables burst-paste detection for typed input entirely.
@@ -1128,11 +1129,11 @@ pub struct Config {
     pub disable_paste_burst: bool,
 
     /// When `false`, disables analytics across Codex product surfaces in this machine.
-    /// Defaults to `Some(false)` independently of the client.
+    /// Voluntarily left as Optional because the default value might depend on the client.
     pub analytics_enabled: Option<bool>,
 
     /// When `false`, disables feedback collection across Codex product surfaces.
-    /// Defaults to `false`.
+    /// Defaults to `true`.
     pub feedback_enabled: bool,
 
     /// Configured discoverable tools for tool suggestions.
@@ -4458,12 +4459,12 @@ impl Config {
                 .and_then(|tui| tui.disable_paste_burst)
                 .or(cfg.disable_paste_burst)
                 .unwrap_or(false),
-            analytics_enabled: Some(cfg.analytics.as_ref().and_then(|a| a.enabled).unwrap_or(false)),
+            analytics_enabled: cfg.analytics.as_ref().and_then(|a| a.enabled),
             feedback_enabled: cfg
                 .feedback
                 .as_ref()
                 .and_then(|feedback| feedback.enabled)
-                .unwrap_or(false),
+                .unwrap_or(true),
             tool_suggest,
             tui_notifications: cfg
                 .tui

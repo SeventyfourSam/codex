@@ -3,9 +3,9 @@ run-name: Custom release - ${{ inputs.release_tag || (github.ref_type == 'tag' &
 
 # Push vX.Y.Z-custom or vX.Y.Z-custom.N to build and publish a release.
 on:
-  # 16:00 UTC is 00:00 the next day in Asia/Singapore.
+  # Every six hours: 05:17, 11:17, 17:17, and 23:17 in Asia/Singapore.
   schedule:
-    - cron: "0 16 * * *"
+    - cron: "17 3,9,15,21 * * *"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -111,10 +111,15 @@ jobs:
         run: |
           {
             echo '### Preparation failed; see the failed step for details'
-            echo '```text'
-            git status --short
-            git diff --name-only --diff-filter=U
-            echo '```'
+            conflicts=$(git diff --name-only --diff-filter=U)
+            if [[ -n "$conflicts" ]]; then
+              echo 'Only these files need manual conflict resolution:'
+              echo '```text'
+              printf '%s\n' "$conflicts"
+              echo '```'
+            else
+              echo 'No unresolved merge conflicts; inspect the failed step above.'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   build:

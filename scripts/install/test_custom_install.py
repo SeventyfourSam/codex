@@ -76,6 +76,10 @@ else:
             '  directory=$(cd "$(dirname "$binary")" && pwd -P)\n'
             '  case "$directory" in */release/*) ;; *) exit 137;; esac\n'
             "fi\n"
+            'if [ "$1" = --initialize-custom-config ]; then\n'
+            '  printf "initialized\\n" >> "$FIXTURE/config-init"\n'
+            '  [ "${CUSTOM_TEST_CONFIG_FAIL:-0}" != 1 ]; exit $?\n'
+            "fi\n"
             f'case "$1" in --version) echo "codex-cli {version.split("-custom")[0]}";; --custom) echo "codex-cli {version}";; app-server) exit 0;; *) exit 2;; esac\n',
         )
         for file in [
@@ -132,6 +136,7 @@ else:
             f"codex-cli {VERSION}\n",
         )
         self.assertEqual((self.home / ".zshrc").read_text().count("/env"), 1)
+        self.assertEqual((self.root / "config-init").read_text(), "initialized\n" * 2)
         result = subprocess.run(
             ["sh", str(SCRIPT), "--release", VERSION],
             env=self.env,
@@ -176,6 +181,16 @@ else:
         result = self.install()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("SHA-256 mismatch", result.stderr)
+        self.assertEqual((root / "current").resolve(), old)
+
+    def test_configuration_failure_keeps_previous_selection(self):
+        root = self.home / ".codex/packages/standalone"
+        old = root / "releases/old"
+        old.mkdir(parents=True)
+        (root / "current").symlink_to(old)
+        result = self.install(CUSTOM_TEST_CONFIG_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.root / "config-init").read_text(), "initialized\n")
         self.assertEqual((root / "current").resolve(), old)
 
     def test_release_path_is_used_during_validation_and_after_install(self):

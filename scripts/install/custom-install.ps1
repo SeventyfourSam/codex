@@ -88,6 +88,8 @@ try {
         }
         Move-Item -LiteralPath $package -Destination $destination
     }
+    & (Join-Path $destination 'bin\codex.exe') --initialize-custom-config
+    if ($LASTEXITCODE -ne 0) { throw 'Could not initialize custom settings; the active package was not changed.' }
     Set-Link $current $destination
     $marker = Join-Path $root 'auto-update-version'
     if ($Release -eq 'latest') { [System.IO.File]::WriteAllText("$marker.tmp.$PID", $name); Move-Item "$marker.tmp.$PID" $marker -Force }

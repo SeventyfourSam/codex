@@ -11,6 +11,8 @@ mod config_layer_source;
 mod config_requirements;
 pub mod config_toml;
 mod constraint;
+mod custom_defaults;
+pub use custom_defaults::initialize_custom_config;
 mod diagnostics;
 mod filesystem_constraints;
 mod fingerprint;
