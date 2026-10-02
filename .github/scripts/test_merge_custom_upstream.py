@@ -109,6 +109,33 @@ class MergeUpstreamTests(unittest.TestCase):
         self.run_merge()
         self.assertEqual(self.git("rev-parse", "HEAD"), merged)
 
+    def test_merge_preserves_upstream_snapshot_padding(self):
+        self.git("switch", "release")
+        snapshot = Path("screen.snap")
+        content = b"menu\n> selected       \n  next           \n\n"
+        snapshot.write_bytes(content)
+        self.commit("Upstream padded snapshot")
+        self.git("switch", "custom")
+        self.release()
+        self.run_merge()
+        self.assertEqual(snapshot.read_bytes(), content)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_leftover_conflict_markers_do_not_commit(self):
+        self.git("switch", "release")
+        Path("broken.txt").write_text(
+            "<<<<<<< ours\nleft\n=======\nright\n>>>>>>> theirs\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        self.commit("Upstream leftover markers")
+        self.git("switch", "custom")
+        self.release()
+        before = self.git("rev-parse", "HEAD")
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.run_merge()
+        self.assertEqual(self.git("rev-parse", "HEAD"), before)
+
     def test_other_file_conflict_does_not_commit(self):
         self.release()
         Path("feature.txt").write_text(

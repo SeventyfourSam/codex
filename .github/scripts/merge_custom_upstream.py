@@ -124,7 +124,19 @@ def merge_release(version: str) -> None:
         raise ValueError(
             "Merged workspace version does not match the requested release"
         )
-    git("diff", "--cached", "--check")
+    # Preserve upstream whitespace (including padded UI snapshots), but still
+    # reject leftover conflict markers. Inherit stdout so failures are visible.
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "core.whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab",
+            "diff",
+            "--cached",
+            "--check",
+        ],
+        check=True,
+    )
     git("commit", "-m", f"Merge upstream {version} into custom")
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a", encoding="utf-8") as output:
