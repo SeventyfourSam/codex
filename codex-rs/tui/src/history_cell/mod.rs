@@ -108,6 +108,7 @@ mod base;
 mod dynamic;
 mod exec;
 mod hook_cell;
+mod image_links;
 mod markdown_render_cache;
 mod mcp;
 mod messages;

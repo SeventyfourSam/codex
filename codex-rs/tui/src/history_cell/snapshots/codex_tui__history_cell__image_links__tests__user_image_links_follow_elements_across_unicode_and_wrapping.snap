@@ -1,0 +1,41 @@
+---
+source: tui/src/history_cell/image_links_tests.rs
+expression: "snapshots.join(\"\\n\\n\")"
+---
+width 12
+
+  [Image
+  #1]
+
+› 同一行
+  [Image
+  #2] and
+  [Image
+  #3]
+  同一行
+  [Image
+  #2]
+  literal
+  https://e
+  xample.co
+  m/
+
+
+width 24
+
+  [Image #1]
+
+› 同一行 [Image #2] and
+  [Image #3]
+  同一行 [Image #2]
+  literal
+  https://example.com/
+
+
+width 80
+
+  [Image #1]
+
+› 同一行 [Image #2] and [Image #3]
+  同一行 [Image #2] literal
+  https://example.com/

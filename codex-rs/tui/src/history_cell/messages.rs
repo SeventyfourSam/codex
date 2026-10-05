@@ -245,6 +245,7 @@ impl HistoryCell for UserHistoryCell {
             source.right_reserve = 1;
             source.copy_as_prose = true;
         }
+        super::image_links::user_images(self, &mut lines, width);
         lines
     }
 

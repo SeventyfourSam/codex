@@ -164,6 +164,14 @@ pub(crate) struct ViewImageHistoryCell {
 }
 
 impl HistoryCell for ViewImageHistoryCell {
+    fn display_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        super::image_links::viewed_image(self.display_lines(width), &self.path_label)
+    }
+
+    fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        super::image_links::viewed_image(self.transcript_lines(width), &self.path_label)
+    }
+
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let line = vec![
             "• ".dim(),

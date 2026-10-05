@@ -1,0 +1,19 @@
+---
+source: tui/src/history_cell/image_links_tests.rs
+expression: "snapshots.join(\"\\n\\n\")"
+---
+width 0
+
+linked: 
+
+width 8
+• Viewe…
+linked: 
+
+width 22
+• Viewed image 土地 …
+linked: 土地 …
+
+width 80
+• Viewed image 土地 图#50%.png
+linked: 土地 图#50%.png
