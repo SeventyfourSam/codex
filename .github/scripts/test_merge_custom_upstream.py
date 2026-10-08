@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import merge_custom_upstream as merge
 import sync_custom_release as sync
+import custom_merge_schema as schema
 
 
 class MergeUpstreamTests(unittest.TestCase):
@@ -41,6 +42,7 @@ class MergeUpstreamTests(unittest.TestCase):
         self.git("branch", "release")
         self.set_version("0.159.0")
         self.commit("Custom version")
+        self.git("tag", "rust-v0.159.0")
         Path("custom.txt").write_text(
             "keep custom changes\n", encoding="utf-8", newline="\n"
         )
@@ -121,6 +123,167 @@ class MergeUpstreamTests(unittest.TestCase):
         self.assertEqual(snapshot.read_bytes(), content)
         self.assertEqual(self.git("status", "--porcelain"), "")
 
+    def test_release_backport_and_mainline_replacement_do_not_conflict(self):
+        # Official maintenance release adds the new call before the old one;
+        # mainline replaces the old call. Ancestry-based merging conflicts.
+        self.git("switch", "release")
+        Path("reminder.rs").write_text("old_notice();\n", encoding="utf-8")
+        self.commit("Common ancestor")
+        base = self.git("rev-parse", "HEAD")
+        self.git("switch", "custom")
+        self.git("merge", "release", "--no-edit")
+        Path("reminder.rs").write_text(
+            "security_setup();\nold_notice();\n", encoding="utf-8"
+        )
+        Path("custom.txt").unlink()
+        self.commit("Official maintenance backport")
+        self.git("tag", "-f", "rust-v0.159.0")
+        Path("custom.txt").write_text("unpublished custom change\n", encoding="utf-8")
+        self.commit("Unpublished custom change")
+        self.git("switch", "release")
+        self.assertEqual(self.git("rev-parse", "HEAD"), base)
+        Path("reminder.rs").write_text("security_setup();\n", encoding="utf-8")
+        self.commit("Mainline replacement")
+        self.git("switch", "custom")
+        self.release()
+        preview = subprocess.run(
+            ["git", "merge-tree", "--write-tree", "HEAD", "rust-v0.159.1"],
+            capture_output=True,
+        )
+        self.assertEqual(preview.returncode, 1)
+        self.assertIn(b"reminder.rs", preview.stdout)
+        self.run_merge()
+        self.assertEqual(
+            Path("reminder.rs").read_text(encoding="utf-8"), "security_setup();\n"
+        )
+        self.assertEqual(
+            Path("custom.txt").read_text(encoding="utf-8"),
+            "unpublished custom change\n",
+        )
+        self.assertEqual(
+            merge.json.loads(merge.BASELINE.read_text()),
+            {"version": "0.159.1", "commit": self.git("rev-parse", "rust-v0.159.1")},
+        )
+        # The next upgrade must use the newly recorded official release.
+        self.git("switch", "release")
+        self.set_version("0.159.2")
+        self.commit("Next release")
+        self.git("tag", "rust-v0.159.2")
+        self.git("switch", "custom")
+        merge.merge_release("0.159.2")
+        self.assertEqual(
+            merge.json.loads(merge.BASELINE.read_text())["version"], "0.159.2"
+        )
+
+    def test_incorrect_recorded_baseline_stops_before_merge(self):
+        self.release()
+        merge.BASELINE.parent.mkdir()
+        merge.BASELINE.write_text(
+            merge.json.dumps({"version": "0.159.0", "commit": "0" * 40})
+        )
+        self.commit("Incorrect baseline")
+        before = self.git("rev-parse", "HEAD")
+        with self.assertRaisesRegex(ValueError, "baseline does not match"):
+            self.run_merge()
+        self.assertEqual(self.git("rev-parse", "HEAD"), before)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_unmerged_official_baseline_is_rejected(self):
+        self.release()
+        self.git("tag", "-f", "rust-v0.159.0", "release")
+        # Correct the version but leave that official baseline outside custom.
+        self.git("switch", "release")
+        self.set_version("0.159.0")
+        self.commit("Unmerged official baseline")
+        self.git("tag", "-f", "rust-v0.159.0")
+        self.git("switch", "custom")
+        with self.assertRaisesRegex(ValueError, "not an ancestor"):
+            self.run_merge()
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def schema_upgrade(self):
+        bundle = Path(schema.GENERATED_PATHS[0]) / "precomputed" / "exports.json.zst"
+        bundle.parent.mkdir(parents=True)
+        bundle.write_bytes(b"base\0bundle")
+        Path("codex-rs/Cargo.lock").write_bytes(b"merged lock\n")
+        self.commit("Official schema baseline")
+        self.git("tag", "-f", "rust-v0.159.0")
+        self.git("branch", "-f", "release", "HEAD")
+        bundle.write_bytes(b"custom\0bundle")
+        self.commit("Custom schema")
+        self.git("switch", "release")
+        bundle.write_bytes(b"upstream\0bundle")
+        self.commit("Upstream schema")
+        self.git("switch", "custom")
+        self.release()
+        return bundle
+
+    def test_binary_schema_conflicts_are_regenerated_and_checked(self):
+        bundle = self.schema_upgrade()
+        real_run = subprocess.run
+        commands = []
+
+        def run(command, **kwargs):
+            if command[0] != "just":
+                return real_run(command, **kwargs)
+            commands.append(command)
+            if command == ["just", "write-app-server-schema"]:
+                self.assertEqual(bundle.read_bytes(), b"upstream\0bundle")
+                bundle.write_bytes(b"regenerated stable\0bundle")
+                # The standard generator also updates Python SDK models.
+                sdk = Path(schema.GENERATED_PATHS[1])
+                sdk.mkdir(parents=True)
+                (sdk / "models.py").write_text("generated = True\n")
+                Path("codex-rs/Cargo.lock").write_bytes(b"cargo normalized versions\n")
+            elif command == ["just", "write-app-server-schema", "--experimental"]:
+                (bundle.parent / "experimental.json.zst").write_bytes(
+                    b"regenerated experimental\0bundle"
+                )
+            else:
+                self.assertEqual(bundle.read_bytes(), b"regenerated stable\0bundle")
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(schema.subprocess, "run", side_effect=run):
+            self.run_merge()
+        self.assertEqual(
+            commands,
+            [
+                ["just", "write-app-server-schema"],
+                ["just", "write-app-server-schema", "--experimental"],
+                ["just", "test", "-p", "codex-app-server-protocol"],
+            ],
+        )
+        self.assertEqual(Path("codex-rs/Cargo.lock").read_bytes(), b"merged lock\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertIn("models.py", self.git("ls-tree", "-r", "--name-only", "HEAD"))
+
+    def test_schema_generation_failure_does_not_commit_or_advance_baseline(self):
+        self.schema_upgrade()
+        before = self.git("rev-parse", "HEAD")
+        real_run = subprocess.run
+
+        def run(command, **kwargs):
+            if command[0] != "just":
+                return real_run(command, **kwargs)
+            Path("codex-rs/Cargo.lock").write_bytes(b"cargo changed lock\n")
+            raise subprocess.CalledProcessError(1, command)
+
+        with patch.object(schema.subprocess, "run", side_effect=run):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.run_merge()
+        self.assertEqual(self.git("rev-parse", "HEAD"), before)
+        self.assertFalse(merge.BASELINE.exists())
+        self.assertEqual(Path("codex-rs/Cargo.lock").read_bytes(), b"merged lock\n")
+
+    def test_source_conflicts_stop_before_schema_generation(self):
+        self.schema_upgrade()
+        Path("feature.txt").write_text("conflicting custom source\n")
+        self.commit("Custom source conflict")
+        with patch.object(merge, "regenerate_schema") as regenerate:
+            with self.assertRaisesRegex(ValueError, "feature.txt"):
+                self.run_merge()
+        regenerate.assert_not_called()
+
     def test_leftover_conflict_markers_do_not_commit(self):
         self.git("switch", "release")
         Path("broken.txt").write_text(
@@ -155,6 +318,9 @@ class MergeUpstreamTests(unittest.TestCase):
             ]["version"],
             "0.159.1",
         )
+        self.git("merge", "--abort")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual(self.git("rev-parse", "HEAD"), before)
 
     def test_dependency_conflict_does_not_commit(self):
         self.manifest.write_text(
@@ -287,7 +453,7 @@ class MergeUpstreamTests(unittest.TestCase):
 
     def test_sync_after_squash_preserves_recorded_revision(self):
         self.prepare_sync()
-        base = self.git("merge-base", "custom", "release")
+        base = self.git("rev-parse", "rust-v0.159.0")
         tree = self.git("rev-parse", "HEAD^{tree}")
         squashed = self.git("commit-tree", tree, "-p", base, "-m", "Squashed custom")
         self.git("switch", "-C", "custom", squashed)

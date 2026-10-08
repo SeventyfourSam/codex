@@ -50,7 +50,8 @@ jobs:
   prepare:
     if: github.repository == 'SeventyfourSam/codex' && github.ref == 'refs/heads/custom' && github.event_name != 'push'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Source-based protocol regeneration may compile its Rust generator once.
+    timeout-minutes: 60
     permissions:
       contents: write
     outputs:
@@ -69,6 +70,28 @@ jobs:
       - name: Test merge and release helpers
         run: python -m unittest discover -s .github/scripts -p test_merge_custom_upstream.py
 
+      - name: Install schema generation tools
+        if: inputs.release_tag == ''
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
+        with:
+          tool: just,cargo-nextest
+
+      - name: Install Python SDK generation tools
+        if: inputs.release_tag == ''
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Cache protocol generator dependencies and builds
+        if: inputs.release_tag == ''
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: custom-schema-v1-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml', 'codex-rs/.cargo/config.toml', 'codex-rs/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            custom-schema-v1-${{ runner.os }}-
+
       - name: Select explicitly requested tag
         id: tag
         if: github.ref_type == 'tag' || inputs.release_tag != ''
@@ -86,6 +109,8 @@ jobs:
         if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.tag.outputs.release_tag == ''
         env:
           GH_TOKEN: ${{ github.token }}
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_TEST_DEBUG: "0"
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

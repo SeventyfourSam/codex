@@ -1015,6 +1015,9 @@ See the Codex keymap documentation for supported actions and examples."
             "tui startup initial frame scheduled"
         );
         app.refresh_startup_skills(&app_server);
+        // Kick off a non-blocking rate-limit prefetch so the first `/status`
+        // already has data and available reset credits can be surfaced, without
+        // delaying the initial frame render.
         if requires_openai_auth && has_chatgpt_account {
             crate::security_setup::prefetch(
                 &app.config,
@@ -1026,6 +1029,13 @@ See the Codex keymap documentation for supported actions and examples."
                 &app.config,
                 &app_server,
                 app.chat_widget.cyber_policy_notice.clone(),
+            );
+            let reset_hint_request_id = app.chat_widget.start_rate_limit_reset_startup_check();
+            app.refresh_rate_limits(
+                &app_server,
+                RateLimitRefreshOrigin::StartupPrefetch {
+                    reset_hint_request_id,
+                },
             );
         }
 
