@@ -32,6 +32,8 @@ use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
+#[path = "client_custom_transport.rs"]
+mod custom_transport;
 #[path = "client_tool_metadata.rs"]
 mod tool_metadata;
 
@@ -650,6 +652,9 @@ impl ModelClient {
         session_telemetry: &SessionTelemetry,
         _model_info: &ModelInfo,
     ) -> bool {
+        if !custom_transport::ALLOW_HTTP_INFERENCE {
+            return false;
+        }
         let websocket_enabled = self.responses_websocket_enabled();
         let activated =
             websocket_enabled && !self.state.disable_websockets.swap(true, Ordering::Relaxed);
@@ -1653,6 +1658,11 @@ impl ModelClientSession {
         responses_metadata: &CodexResponsesMetadata,
         inference_trace: &InferenceTraceContext,
     ) -> Result<ResponseStream> {
+        if !custom_transport::ALLOW_HTTP_INFERENCE {
+            return Err(CodexErr::UnsupportedOperation(
+                custom_transport::HTTP_DISABLED_MESSAGE.to_owned(),
+            ));
+        }
         let auth_manager = self.client.state.provider.auth_manager();
         let mut auth_recovery = auth_manager
             .as_ref()
