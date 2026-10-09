@@ -11,7 +11,7 @@ import unittest
 class CustomUpdateTests(unittest.TestCase):
     def test_download_execution_and_failures(self):
         source = (
-            Path(__file__).resolve().parents[2] / "codex-rs/tui/src/update_action.rs"
+            Path(__file__).resolve().parents[2] / "codex-rs/tui/src/custom_updates.rs"
         )
         (command,) = [
             json.loads(line.strip().removesuffix(","))

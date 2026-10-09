@@ -1,6 +1,6 @@
 # Run the actual embedded updater in child shells to check execution and exits.
 $ErrorActionPreference = 'Stop'
-$commandLine = @(Get-Content "$PSScriptRoot/../../codex-rs/tui/src/update_action.rs" | Where-Object { $_ -match 'irm .* \| iex' })
+$commandLine = @(Get-Content "$PSScriptRoot/../../codex-rs/tui/src/custom_updates.rs" | Where-Object { $_ -match 'irm .* \| iex' })
 if ($commandLine.Count -ne 1) { throw 'Could not locate the CLI/TUI installer command.' }
 $command = $commandLine[0].Trim().TrimEnd(',') | ConvertFrom-Json
 $daemonSource = Get-Content "$PSScriptRoot/../../codex-rs/app-server-daemon/src/update_loop.rs" -Raw

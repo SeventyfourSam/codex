@@ -98,6 +98,13 @@ jobs:
           python -m unittest discover -s .github/scripts -p test_custom_source_policy.py
           python -m unittest discover -s .github/scripts -p test_custom_compat.py
 
+      - name: Test Unix installer and updater fixtures without network
+        run: python -m unittest discover -s scripts/install -p 'test_custom_*.py'
+
+      - name: Test Windows updater fixtures without network
+        shell: pwsh
+        run: ./scripts/install/test_custom_update.ps1
+
       - name: Install schema generation tools
         if: inputs.release_tag == ''
         uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
