@@ -98,8 +98,8 @@ jobs:
           python -m unittest discover -s .github/scripts -p test_custom_source_policy.py
           python -m unittest discover -s .github/scripts -p test_custom_compat.py
 
-      - name: Test Unix installer and updater fixtures without network
-        run: python -m unittest discover -s scripts/install -p 'test_custom_*.py'
+      - name: Test Unix updater fixtures without network
+        run: python -m unittest discover -s scripts/install -p test_custom_update.py
 
       - name: Test Windows updater fixtures without network
         shell: pwsh
@@ -225,6 +225,28 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
+
+      - name: Test macOS installer without network
+        if: runner.os == 'macOS'
+        run: python3 -m unittest discover -s scripts/install -p 'test_custom_*.py'
+
+      - name: Test Windows installer and updater fixtures without network
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($test in @('test_custom_install_platform.ps1', 'test_custom_update.ps1')) {
+            & (Get-Process -Id $PID).Path -NoProfile -File "./scripts/install/$test"
+            if ($LASTEXITCODE -ne 0) { throw "$test failed." }
+          }
+
+      - name: Test Windows PowerShell 5.1 installer and updater fixtures without network
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          foreach ($test in @('test_custom_install_platform.ps1', 'test_custom_update.ps1')) {
+            & (Get-Process -Id $PID).Path -NoProfile -File "./scripts/install/$test"
+            if ($LASTEXITCODE -ne 0) { throw "$test failed." }
+          }
 
       - name: Validate release version
         id: version
@@ -368,18 +390,10 @@ jobs:
               subprocess.run([root / "codex-path" / f"rg{suffix}", "--version"], check=True, timeout=30)
           PY
 
-      - name: Test macOS installer without network
-        if: runner.os == 'macOS'
-        run: python3 -m unittest discover -s scripts/install -p 'test_custom_*.py'
-
       - name: Test Windows installer without network
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          foreach ($test in @('test_custom_install_platform.ps1', 'test_custom_update.ps1')) {
-            & (Get-Process -Id $PID).Path -NoProfile -File "./scripts/install/$test"
-            if ($LASTEXITCODE -ne 0) { throw "$test failed." }
-          }
           # -File isolates expected native failures; uncaught test assertions still fail.
           & (Get-Process -Id $PID).Path -NoProfile -File ./scripts/install/test_custom_install.ps1 -Archive "dist/codex-$env:CUSTOM_VERSION-$env:TARGET.zip" -Version "$env:CUSTOM_VERSION"
           if ($LASTEXITCODE -ne 0) { throw 'Installer tests failed.' }
@@ -388,10 +402,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          foreach ($test in @('test_custom_install_platform.ps1', 'test_custom_update.ps1')) {
-            & (Get-Process -Id $PID).Path -NoProfile -File "./scripts/install/$test"
-            if ($LASTEXITCODE -ne 0) { throw "$test failed." }
-          }
           # -File isolates expected native failures; uncaught test assertions still fail.
           & (Get-Process -Id $PID).Path -NoProfile -File ./scripts/install/test_custom_install.ps1 -Archive "dist/codex-$env:CUSTOM_VERSION-$env:TARGET.zip" -Version "$env:CUSTOM_VERSION"
           if ($LASTEXITCODE -ne 0) { throw 'Installer tests failed.' }
