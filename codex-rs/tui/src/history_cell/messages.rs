@@ -503,6 +503,7 @@ impl HistoryCell for AgentMessageCell {
 #[derive(Debug)]
 pub(crate) struct AgentMarkdownCell {
     markdown_source: String,
+    copy_source: Option<String>,
     cwd: PathBuf,
     inline_visualization_context: Option<crate::inline_visualization::InlineVisualizationContext>,
     rendered_lines: Option<MarkdownRenderCache>,
@@ -510,6 +511,11 @@ pub(crate) struct AgentMarkdownCell {
 }
 
 impl AgentMarkdownCell {
+    pub(crate) fn with_copy_source(mut self, source: Option<String>) -> Self {
+        self.copy_source = source;
+        self
+    }
+
     /// Create a finalized source-backed assistant message cell.
     ///
     /// `markdown_source` must be the raw source accumulated by the stream controller, not already
@@ -536,6 +542,7 @@ impl AgentMarkdownCell {
                 .then(MarkdownRenderCache::default);
         Self {
             markdown_source,
+            copy_source: None,
             cwd: cwd.to_path_buf(),
             inline_visualization_context,
             rendered_lines,
@@ -622,6 +629,10 @@ impl AgentMarkdownCell {
 }
 
 impl HistoryCell for AgentMarkdownCell {
+    fn copy_source(&self) -> Option<&str> {
+        Some(self.copy_source.as_deref().unwrap_or(&self.markdown_source))
+    }
+
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         visible_lines(self.display_hyperlink_lines(width))
     }
