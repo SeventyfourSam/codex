@@ -16,7 +16,10 @@ pub(super) async fn spawn_review_thread(
     let available_models = sess
         .services
         .models_manager
-        .list_models(RefreshStrategy::Offline, config.http_client_factory())
+        .list_models(
+            RefreshStrategy::OnlineIfUncached,
+            config.http_client_factory(),
+        )
         .await;
     let review_model_info = sess
         .services

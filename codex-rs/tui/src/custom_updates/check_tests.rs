@@ -68,7 +68,7 @@ async fn refreshes_complete_custom_release_and_respects_popup_dismissal() {
     .unwrap();
     assert_eq!(read_version_info(&cache).unwrap().latest_version, version);
     // Unsupported platforms must not offer an installer for another architecture.
-    if update_action::get_update_action().is_some() {
+    if crate::custom_updates::get_update_action().is_some() {
         assert_eq!(
             get_upgrade_version_for_popup(&config),
             Some(version.to_owned())

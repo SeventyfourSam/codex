@@ -163,5 +163,5 @@ pub(super) fn user_images(cell: &UserHistoryCell, lines: &mut [HyperlinkLine], w
 }
 
 #[cfg(test)]
-#[path = "image_links_tests.rs"]
+#[path = "custom_image_links_tests.rs"]
 mod tests;

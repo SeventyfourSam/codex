@@ -1171,6 +1171,11 @@ class CreditsSnapshot(BaseModel):
     unlimited: bool
 
 
+class CustomModelRefreshPurpose(Enum):
+    startup = "startup"
+    manual = "manual"
+
+
 class CyberAccessProgram(Enum):
     standard = "standard"
     daybreak_blue = "daybreakBlue"
@@ -2802,10 +2807,6 @@ class ModelListParams(BaseModel):
     limit: Annotated[
         int | None,
         Field(description="Optional page size; defaults to a reasonable server-side value.", ge=0),
-    ] = None
-    refresh: Annotated[
-        bool | None,
-        Field(description="Explicit picker refresh; reuses catalogs fetched within the past hour."),
     ] = None
 
 
@@ -8003,6 +8004,14 @@ class ContentItem(
     )
 
 
+class CustomModelRefreshParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    include_hidden: Annotated[bool, Field(alias="includeHidden")]
+    purpose: CustomModelRefreshPurpose
+
+
 class ExperimentalFeature(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -10600,6 +10609,17 @@ class ReviewStartRequest(BaseModel):
     params: ReviewStartParams
 
 
+class CustomModelRefreshRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["custom/modelRefresh"], Field(title="Custom/modelRefreshRequestMethod")
+    ]
+    params: CustomModelRefreshParams
+
+
 class McpServerStatusListRequest(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -10752,6 +10772,20 @@ class ConfigWriteResponse(BaseModel):
     )
     status: WriteStatus
     version: str
+
+
+class CustomModelRefreshResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    data: list[Model]
+    next_cursor: Annotated[
+        str | None,
+        Field(
+            alias="nextCursor",
+            description="Opaque cursor to pass to the next call to continue after the last item. If None, there are no more items to return.",
+        ),
+    ] = None
 
 
 class ErrorNotification(BaseModel):
@@ -12602,6 +12636,7 @@ class ClientRequest(
         | TurnInterruptRequest
         | ReviewStartRequest
         | ModelListRequest
+        | CustomModelRefreshRequest
         | AccountGatewayOAuthReadRequest
         | AccountGatewayOAuthLoginRequest
         | AccountGatewayOAuthCancelRequest
@@ -12712,6 +12747,7 @@ class ClientRequest(
         | TurnInterruptRequest
         | ReviewStartRequest
         | ModelListRequest
+        | CustomModelRefreshRequest
         | AccountGatewayOAuthReadRequest
         | AccountGatewayOAuthLoginRequest
         | AccountGatewayOAuthCancelRequest

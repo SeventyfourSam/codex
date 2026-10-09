@@ -80,7 +80,6 @@ async fn usage_limit_window_reaches_turn_analytics() -> Result<()> {
 
     let codex_home = TempDir::new()?;
     MockResponsesConfig::new(&server.uri())
-        .with_extra_config("[analytics]\nenabled = true")
         .with_root_config(&format!("chatgpt_base_url = \"{}\"", server.uri()))
         .with_provider_config("supports_websockets = false")
         .write(codex_home.path())?;
@@ -134,7 +133,6 @@ async fn guardian_review_turns_and_tools_reach_analytics() -> Result<()> {
     let codex_home = TempDir::new()?;
     mount_analytics_capture(&server, codex_home.path()).await?;
     MockResponsesConfig::new(&server.uri())
-        .with_extra_config("[analytics]\nenabled = true")
         .with_root_config(&format!("chatgpt_base_url = \"{}\"", server.uri()))
         .with_provider_config("supports_websockets = false")
         .enable_feature(Feature::GuardianApproval)
@@ -400,7 +398,6 @@ async fn multi_agent_v2_tools_emit_collaborator_analytics() -> Result<()> {
 
     let codex_home = TempDir::new()?;
     MockResponsesConfig::new(&server.uri())
-        .with_extra_config("[analytics]\nenabled = true")
         .enable_feature(Feature::MultiAgentV2)
         .with_root_config(&format!("chatgpt_base_url = \"{}\"", server.uri()))
         .write(codex_home.path())?;
@@ -580,15 +577,6 @@ async fn app_server_default_analytics_enabled_with_flag() -> Result<()> {
 }
 
 pub(crate) async fn mount_analytics_capture(server: &MockServer, codex_home: &Path) -> Result<()> {
-    // These tests deliberately exercise opt-in analytics delivery.
-    let config_path = codex_home.join("config.toml");
-    if config_path.exists() {
-        let mut config =
-            std::fs::read_to_string(&config_path)?.parse::<toml_edit::DocumentMut>()?;
-        config["analytics"]["enabled"] = toml_edit::value(true);
-        std::fs::write(config_path, config.to_string())?;
-    }
-
     Mock::given(method("POST"))
         .and(path("/codex/analytics-events/events"))
         .respond_with(ResponseTemplate::new(200))
@@ -913,8 +901,6 @@ async fn assert_plugin_measurement_analytics(remote: bool, background: bool) -> 
         format!(
             r#"{catalog_config}
 {config}
-[analytics]
-enabled = true
 [features]
 step_model_switching = true
 default_mode_request_user_input = true

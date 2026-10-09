@@ -10,6 +10,10 @@
 //! bumps the active-cell revision tracked by `ChatWidget`, so the cache key changes whenever the
 //! rendered transcript output can change.
 
+mod custom_update_notice;
+#[cfg(not(debug_assertions))]
+pub(crate) use custom_update_notice::CustomUpdateAvailableHistoryCell;
+
 mod activity_group;
 pub(crate) use activity_group::ActivityGroup;
 
@@ -105,10 +109,10 @@ mod activity_details;
 pub(crate) mod activity_preview;
 mod approvals;
 mod base;
+mod custom_image_links;
 mod dynamic;
 mod exec;
 mod hook_cell;
-mod image_links;
 mod markdown_render_cache;
 mod mcp;
 mod messages;

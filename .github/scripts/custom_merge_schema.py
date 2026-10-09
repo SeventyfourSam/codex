@@ -38,6 +38,23 @@ def regenerate_schema(upstream: str) -> None:
             ["just", "write-app-server-schema", "--experimental"], check=True
         )
         subprocess.run(["just", "test", "-p", "codex-app-server-protocol"], check=True)
+        if Path("codex-rs/cli/Cargo.toml").is_file():
+            # Protocol tests do not compile new TUI callers of protocol structs.
+            subprocess.run(
+                [
+                    "cargo",
+                    "check",
+                    "-p",
+                    "codex-cli",
+                    "-p",
+                    "codex-tui",
+                    "--tests",
+                    "--message-format",
+                    "short",
+                ],
+                cwd="codex-rs",
+                check=True,
+            )
     finally:
         # Cargo may rewrite workspace package versions while generating. Keep
         # the merged lockfile; regeneration is not a dependency update.

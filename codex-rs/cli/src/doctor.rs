@@ -591,15 +591,10 @@ async fn build_report(
 
     progress.begin("desktop");
     if let Some(desktop) = desktop::collect().await {
-        // The fork distributes CLI packages only; do not query the official desktop updater.
         #[cfg(any(target_os = "macos", target_os = "windows"))]
-        if let Some(application) = desktop.application.as_ref()
-            && let Some(update) = checks.iter_mut().find(|check| check.id == "updates.status")
-        {
-            update.details.push(format!(
-                "desktop update check skipped: {} is outside the custom CLI distribution",
-                application.identity
-            ));
+        if let Some(application) = desktop.application.as_ref() {
+            updates::append_desktop_update(&mut checks, config_result.as_ref().ok(), application)
+                .await;
         }
         progress.finish("desktop", overall_status(&desktop.checks));
         checks.extend(desktop.checks);

@@ -18,12 +18,6 @@ async fn usage_menu_opens_analytics() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
     chat.dispatch_command(SlashCommand::Usage);
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::UsageMenu { .. }
-        })
-    );
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_matches!(rx.try_recv(), Ok(AppEvent::OpenAnalytics { view: None }));
 }
@@ -129,12 +123,6 @@ async fn usage_command_opens_menu_when_reset_is_available_snapshot() {
     ));
 
     chat.dispatch_command(SlashCommand::Usage);
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::UsageMenu { .. }
-        })
-    );
 
     assert_chatwidget_snapshot!(
         "usage_command_menu",
@@ -273,12 +261,6 @@ async fn usage_command_can_check_reset_availability_before_startup_refresh_finis
     chat.start_rate_limit_reset_startup_check();
 
     chat.dispatch_command(SlashCommand::Usage);
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::UsageMenu { .. }
-        })
-    );
 
     assert_chatwidget_snapshot!(
         "usage_command_menu_before_reset_refresh",
@@ -296,12 +278,6 @@ async fn usage_command_can_check_reset_availability_for_workspace_accounts() {
     chat.plan_type = Some(PlanType::Business);
 
     chat.dispatch_command(SlashCommand::Usage);
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::UsageMenu { .. }
-        })
-    );
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -319,12 +295,6 @@ async fn usage_menu_rate_limit_reset_entry_opens_reset_flow() {
         Ok(reset_credits(/*available_count*/ 2)),
     ));
     chat.dispatch_command(SlashCommand::Usage);
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::UsageMenu { .. }
-        })
-    );
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));

@@ -208,7 +208,6 @@ async fn actual_turn_elicitation_analytics(scenario: Scenario) -> Result<()> {
     let mut builder = search_capable_apps_builder(server.uri())
         .with_analytics_events_client(client.clone())
         .with_config(move |config| {
-            config.analytics_enabled = Some(true);
             config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
             config.approvals_reviewer = ApprovalsReviewer::User;
             if scenario != Scenario::DefaultAuth {

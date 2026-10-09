@@ -53,9 +53,6 @@ pub struct ModelProviderCapabilitiesReadResponse {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ModelListParams {
-    /// Explicit picker refresh; reuses catalogs fetched within the past hour.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub refresh: bool,
     /// Opaque pagination cursor returned by a previous call.
     #[ts(optional = nullable)]
     pub cursor: Option<String>,

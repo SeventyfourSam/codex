@@ -109,6 +109,10 @@ impl App {
         app_server: &AppServerSession,
         origin: RateLimitRefreshOrigin,
     ) {
+        if self.chat_widget.custom_usage_enabled() && !crate::custom_usage::allow_refresh(origin) {
+            self.chat_widget.finish_rate_limit_recovery();
+            return;
+        }
         if matches!(
             origin,
             RateLimitRefreshOrigin::Recovery | RateLimitRefreshOrigin::ResetConsume { .. }
@@ -129,7 +133,7 @@ impl App {
             let request = fetch_account_rate_limits(request_handle, origin);
             let result = match origin {
                 RateLimitRefreshOrigin::Recovery
-                | RateLimitRefreshOrigin::TurnCompleted
+                | RateLimitRefreshOrigin::Periodic
                 | RateLimitRefreshOrigin::ResetConsume { .. }
                 | RateLimitRefreshOrigin::ResetPicker { .. } => {
                     tokio::time::timeout(RATE_LIMIT_RESET_REQUEST_TIMEOUT, request)
@@ -822,9 +826,8 @@ pub(super) async fn fetch_account_rate_limits(
             request_id: request_id.clone(),
             params: Some(GetAccountRateLimitsParams {
                 supports_luna_reserve: true,
-                exclude_reset_credit_details: !matches!(
+                exclude_reset_credit_details: crate::custom_usage::exclude_reset_credit_details(
                     origin,
-                    RateLimitRefreshOrigin::ResetPicker { .. }
                 ),
             }),
         })

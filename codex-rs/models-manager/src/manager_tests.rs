@@ -1,4 +1,6 @@
 use super::*;
+#[path = "custom_refresh_policy_tests.rs"]
+mod custom_refresh_policy_tests;
 use crate::ModelsManagerConfig;
 use crate::cache::FileModelsCache;
 use crate::cache::ModelsCache;
@@ -29,9 +31,6 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use tempfile::tempdir;
-
-#[path = "refresh_policy_tests.rs"]
-mod refresh_policy_tests;
 
 #[path = "api_key_discovery_tests.rs"]
 mod api_key_discovery_tests;
@@ -397,7 +396,7 @@ async fn file_cache_refresh_ttl_renews_expired_entry_without_serving_it_stale() 
         DEFAULT_MODEL_CACHE_TTL,
     );
     let client_version = crate::client_version_to_whole();
-    let expired_at = Utc::now() - chrono::Duration::hours(25);
+    let expired_at = Utc::now() - chrono::Duration::hours(1);
     let entry = ModelsCacheEntry {
         identity: Some("test-provider".to_string()),
         fetched_at: expired_at,
@@ -441,7 +440,7 @@ async fn file_cache_refresh_ttl_renews_expired_entry_without_serving_it_stale() 
 }
 
 #[tokio::test]
-async fn manager_without_cache_initializes_once() {
+async fn manager_without_cache_fetches_on_every_refresh() {
     let remote_models = vec![remote_model("remote", "Remote", /*priority*/ 0)];
     let endpoint = TestModelsEndpoint::new(vec![remote_models.clone(), remote_models.clone()]);
     let manager = OpenAiModelsManager::new_without_cache(
@@ -467,7 +466,7 @@ async fn manager_without_cache_initializes_once() {
     assert_eq!(catalog.models, remote_models);
     assert_eq!(second_catalog, catalog);
     assert_eq!(manager.get_remote_models().await, remote_models);
-    assert_eq!(endpoint.fetch_count(), 1);
+    assert_eq!(endpoint.fetch_count(), 2);
 }
 
 #[tokio::test]
@@ -559,6 +558,47 @@ async fn injected_cache_write_error_does_not_fail_remote_refresh() {
 
     assert_eq!(catalog.models, remote_models);
     assert_eq!(endpoint.fetch_count(), 1);
+}
+
+#[tokio::test]
+async fn injected_cache_ttl_refresh_preserves_cached_payload() {
+    let cached_models = vec![remote_model("cached", "Cached", /*priority*/ 0)];
+    let cached_at = Utc::now() - chrono::Duration::minutes(1);
+    let cache = TestModelsCache::with_entry(ModelsCacheEntry {
+        identity: Some("test-provider".to_string()),
+        fetched_at: cached_at,
+        etag: Some("cached-etag".to_string()),
+        client_version: Some(crate::client_version_to_whole()),
+        models: cached_models.clone(),
+    });
+    let manager = OpenAiModelsManager::new_with_cache(
+        cache.clone(),
+        TestModelsEndpoint::new(Vec::new()),
+        Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+            "test-api-key",
+        ))),
+    );
+    manager.set_api_key_model_discovery_enabled(/*enabled*/ true);
+
+    manager
+        .raw_model_catalog(
+            RefreshStrategy::OnlineIfUncached,
+            DEFAULT_HTTP_CLIENT_FACTORY,
+        )
+        .await;
+    manager
+        .refresh_if_new_etag("cached-etag".to_string(), DEFAULT_HTTP_CLIENT_FACTORY)
+        .await;
+
+    let stored_entries = cache.stored_entries();
+    assert_eq!(stored_entries.len(), 1);
+    assert!(stored_entries[0].fetched_at > cached_at);
+    assert_eq!(stored_entries[0].etag.as_deref(), Some("cached-etag"));
+    assert_eq!(
+        stored_entries[0].client_version,
+        Some(crate::client_version_to_whole())
+    );
+    assert_eq!(stored_entries[0].models, cached_models);
 }
 
 async fn chatgpt_auth_tokens_for_tests(codex_home: &Path) -> CodexAuth {
@@ -1234,12 +1274,9 @@ async fn refresh_available_models_refetches_when_cache_stale() {
 
     // Rewrite cache with an old timestamp so it is treated as stale.
     mutate_file_cache_for_test(codex_home.path(), |cache| {
-        cache.fetched_at = Utc::now() - chrono::Duration::hours(25);
+        cache.fetched_at = Utc::now() - chrono::Duration::hours(1);
     })
     .await;
-
-    std::fs::remove_file(codex_home.path().join("models_refresh.json")).unwrap();
-    let manager = openai_manager_for_tests(codex_home.path().to_path_buf(), endpoint.clone());
 
     manager
         .refresh_available_models(
@@ -1277,9 +1314,6 @@ async fn refresh_available_models_refetches_when_version_mismatch() {
         cache.client_version = Some(format!("{client_version}-mismatch"));
     })
     .await;
-
-    std::fs::remove_file(codex_home.path().join("models_refresh.json")).unwrap();
-    let manager = openai_manager_for_tests(codex_home.path().to_path_buf(), endpoint.clone());
 
     manager
         .refresh_available_models(
@@ -1322,12 +1356,18 @@ async fn refresh_available_models_drops_removed_remote_models() {
     );
 
     manager
-        .refresh_available_models(RefreshStrategy::Online, &DEFAULT_HTTP_CLIENT_FACTORY)
+        .refresh_available_models(
+            RefreshStrategy::OnlineIfUncached,
+            &DEFAULT_HTTP_CLIENT_FACTORY,
+        )
         .await
         .expect("initial refresh succeeds");
 
     manager
-        .refresh_available_models(RefreshStrategy::Online, &DEFAULT_HTTP_CLIENT_FACTORY)
+        .refresh_available_models(
+            RefreshStrategy::OnlineIfUncached,
+            &DEFAULT_HTTP_CLIENT_FACTORY,
+        )
         .await
         .expect("second refresh succeeds");
 

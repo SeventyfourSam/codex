@@ -446,6 +446,7 @@ impl ConfiguredModelProvider {
                 OpenAiModelsManager::new_with_cache(cache, endpoint, auth_manager)
             }
         };
+        let manager = manager.with_custom_refresh_policy();
         match &self.info.model_catalog_url {
             Some(_) => Arc::new(manager.with_provider_catalog()),
             None => Arc::new(manager),

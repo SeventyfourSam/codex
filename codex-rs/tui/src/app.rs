@@ -48,9 +48,9 @@ use crate::exec_command::strip_bash_lc_and_escape;
 use crate::external_editor;
 use crate::file_search::FileSearchManager;
 use crate::history_cell;
-use crate::history_cell::HistoryCell;
 #[cfg(not(debug_assertions))]
-use crate::history_cell::UpdateAvailableHistoryCell;
+use crate::history_cell::CustomUpdateAvailableHistoryCell as UpdateAvailableHistoryCell;
+use crate::history_cell::HistoryCell;
 use crate::hooks_rpc::HookTrustUpdate;
 use crate::key_hint::KeyBindingListExt;
 use crate::keymap::KeyChordMatcher;

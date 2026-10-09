@@ -1,5 +1,6 @@
 #[path = "custom_refresh.rs"]
 mod custom_refresh;
+pub use custom_refresh::CustomRefreshPurpose;
 
 use super::cache::FileModelsCache;
 use crate::cache::ModelsCache;
@@ -35,7 +36,7 @@ use tracing::error;
 use tracing::info;
 
 const MODEL_CACHE_FILE: &str = "models_cache.json";
-const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 
 /// Remote endpoint used by the OpenAI-compatible model manager.
 ///
@@ -93,12 +94,8 @@ pub enum RefreshStrategy {
     Online,
     /// Only use cached data, never fetch from the network.
     Offline,
-    /// Initialize this manager once per identity, preferring the 24-hour cache.
+    /// Use cache if available and fresh, otherwise fetch from the network.
     OnlineIfUncached,
-    /// A new frontend startup, reusing catalogs fetched within the past 24 hours.
-    Startup,
-    /// User-requested refresh, limited to once per hour.
-    Manual,
 }
 
 impl RefreshStrategy {
@@ -107,8 +104,6 @@ impl RefreshStrategy {
             Self::Online => "online",
             Self::Offline => "offline",
             Self::OnlineIfUncached => "online_if_uncached",
-            Self::Manual => "manual",
-            Self::Startup => "startup",
         }
     }
 }
@@ -147,6 +142,15 @@ pub trait ModelsManager: fmt::Debug + Send + Sync {
                 refresh_strategy = %refresh_strategy
             )),
         )
+    }
+
+    /// Refresh the custom catalog without extending upstream refresh strategies.
+    fn custom_refresh_models(
+        &self,
+        _purpose: CustomRefreshPurpose,
+        http_client_factory: HttpClientFactory,
+    ) -> ModelsManagerFuture<'_, Vec<ModelPreset>> {
+        self.list_models(RefreshStrategy::Online, http_client_factory)
     }
 
     /// Return the active raw model catalog, refreshing according to the specified strategy.
@@ -296,7 +300,7 @@ impl CatalogSource {
 pub struct OpenAiModelsManager {
     remote_models: RwLock<ModelsCacheEntry>,
     cache: Option<Arc<dyn ModelsCache>>,
-    refresh_policy: crate::refresh_policy::RefreshPolicy,
+    refresh_policy: crate::custom_refresh_policy::RefreshPolicy,
     endpoint_client: SharedModelsEndpointClient,
     catalog_source: CatalogSource,
     api_key_model_discovery_enabled: AtomicBool,
@@ -392,6 +396,14 @@ impl StaticModelsManager {
 }
 
 impl ModelsManager for OpenAiModelsManager {
+    fn custom_refresh_models(
+        &self,
+        purpose: CustomRefreshPurpose,
+        http_client_factory: HttpClientFactory,
+    ) -> ModelsManagerFuture<'_, Vec<ModelPreset>> {
+        Box::pin(self.custom_refreshed_models(purpose, http_client_factory))
+    }
+
     fn set_api_key_model_discovery_enabled(&self, enabled: bool) {
         self.api_key_model_discovery_enabled
             .store(enabled, Ordering::SeqCst);
@@ -423,8 +435,11 @@ impl ModelsManager for OpenAiModelsManager {
                 if identity.is_some() && self.remote_models.read().await.identity == identity {
                     return Ok(());
                 }
-                self.refresh_available_models(RefreshStrategy::Offline, &http_client_factory)
-                    .await
+                self.refresh_available_models(
+                    self.custom_auth_refresh_strategy(),
+                    &http_client_factory,
+                )
+                .await
             };
             // Include auth resolution and cache access in the best-effort deadline.
             if !matches!(
@@ -498,7 +513,7 @@ impl ModelsManager for OpenAiModelsManager {
         etag: String,
         http_client_factory: HttpClientFactory,
     ) -> ModelsManagerFuture<'_, ()> {
-        if !self.refresh_policy.background_refresh_enabled {
+        if self.refresh_policy.enabled {
             return Box::pin(std::future::ready(()));
         }
         Box::pin(OpenAiModelsManager::refresh_if_new_etag(
@@ -570,24 +585,27 @@ impl OpenAiModelsManager {
         if !self.should_refresh_models().await {
             if matches!(
                 refresh_strategy,
-                RefreshStrategy::Offline
-                    | RefreshStrategy::OnlineIfUncached
-                    | RefreshStrategy::Startup
+                RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached
             ) {
                 self.try_load_cache().await;
             }
             return Ok(());
+        }
+        if self.refresh_policy.enabled && refresh_strategy == RefreshStrategy::OnlineIfUncached {
+            return self
+                .refresh_custom_cached_models(CustomRefreshPurpose::Automatic, http_client_factory)
+                .await;
         }
         match refresh_strategy {
             RefreshStrategy::Offline => {
                 self.try_load_cache().await;
                 Ok(())
             }
-            RefreshStrategy::OnlineIfUncached
-            | RefreshStrategy::Startup
-            | RefreshStrategy::Manual => {
-                self.refresh_custom_cached_models(refresh_strategy, http_client_factory)
-                    .await
+            RefreshStrategy::OnlineIfUncached => {
+                if self.try_load_cache().await {
+                    return Ok(());
+                }
+                self.fetch_and_update_models(http_client_factory).await
             }
             RefreshStrategy::Online => self.fetch_and_update_models(http_client_factory).await,
         }

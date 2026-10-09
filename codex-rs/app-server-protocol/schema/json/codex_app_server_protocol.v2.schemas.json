@@ -3369,6 +3369,30 @@
             },
             "method": {
               "enum": [
+                "custom/modelRefresh"
+              ],
+              "title": "Custom/modelRefreshRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/CustomModelRefreshParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Custom/modelRefreshRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "account/gatewayOAuth/read"
               ],
               "title": "Account/gatewayOAuth/readRequestMethod",
@@ -6571,6 +6595,53 @@
         "hasCredits",
         "unlimited"
       ],
+      "type": "object"
+    },
+    "CustomModelRefreshParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "includeHidden": {
+          "type": "boolean"
+        },
+        "purpose": {
+          "$ref": "#/definitions/CustomModelRefreshPurpose"
+        }
+      },
+      "required": [
+        "includeHidden",
+        "purpose"
+      ],
+      "title": "CustomModelRefreshParams",
+      "type": "object"
+    },
+    "CustomModelRefreshPurpose": {
+      "enum": [
+        "startup",
+        "manual"
+      ],
+      "type": "string"
+    },
+    "CustomModelRefreshResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "data": {
+          "items": {
+            "$ref": "#/definitions/Model"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "description": "Opaque cursor to pass to the next call to continue after the last item. If None, there are no more items to return.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "title": "CustomModelRefreshResponse",
       "type": "object"
     },
     "CyberAccessProgram": {
@@ -11625,10 +11696,6 @@
             "integer",
             "null"
           ]
-        },
-        "refresh": {
-          "description": "Explicit picker refresh; reuses catalogs fetched within the past hour.",
-          "type": "boolean"
         }
       },
       "title": "ModelListParams",

@@ -1111,6 +1111,11 @@ client_request_definitions! {
         serialization: None,
         response: v2::ModelListResponse,
     },
+    CustomModelRefresh => "custom/modelRefresh" {
+        params: v2::CustomModelRefreshParams,
+        serialization: None,
+        response: v2::CustomModelRefreshResponse,
+    },
     GatewayOAuthRead => "account/gatewayOAuth/read" {
         params: #[ts(type = "undefined")] #[serde(skip_serializing_if = "Option::is_none")] Option<()>,
         serialization: None,

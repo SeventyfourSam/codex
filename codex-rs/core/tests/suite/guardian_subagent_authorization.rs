@@ -734,7 +734,6 @@ async fn run_guardian_subagent_review(
                 .expect("write messaging rewrite hook");
         })
         .with_config(move |config| {
-            config.feedback_enabled = true;
             if block_post_hook {
                 config.model_provider.name = "Local compaction test provider".to_owned();
                 config

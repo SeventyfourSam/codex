@@ -67,3 +67,35 @@ fn refuses_invalid_configuration_without_writing() {
         assert_eq!(fs::read_to_string(&path).unwrap(), invalid);
     }
 }
+
+#[test]
+fn installed_daemon_defaults_preserve_explicit_choices_and_other_settings() {
+    let home = tempfile::tempdir().unwrap();
+    initialize_custom_config(home.path()).unwrap();
+    let path = home.path().join("app-server-daemon/settings.json");
+    let first = fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&first).unwrap(),
+        serde_json::json!({"updater": {"autoUpdateEnabled": false}})
+    );
+    initialize_custom_config(home.path()).unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), first);
+    let explicit = r#"{"updater":{"autoUpdateEnabled":true,"updateIntervalMinutes":360},"remoteControlEnabled":true}"#;
+    fs::write(&path, explicit).unwrap();
+    initialize_custom_config(home.path()).unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), explicit);
+}
+
+#[test]
+fn malformed_daemon_settings_do_not_change_either_configuration() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join("app-server-daemon");
+    fs::create_dir(&directory).unwrap();
+    let path = directory.join("settings.json");
+    for invalid in ["{invalid", "[]", r#"{"updater":false}"#] {
+        fs::write(&path, invalid).unwrap();
+        assert!(initialize_custom_config(home.path()).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), invalid);
+        assert!(!home.path().join("config.toml").exists());
+    }
+}

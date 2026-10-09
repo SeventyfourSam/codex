@@ -240,7 +240,7 @@ async fn catalog_collaboration_messages_track_mode_changes() -> Result<()> {
 #[test_case(ModeKind::Default; "default")]
 #[test_case(ModeKind::Plan; "plan")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn explicit_catalog_refresh_appends_collaboration_messages_without_mode_or_model_change(
+async fn catalog_collaboration_messages_refresh_without_mode_or_model_change(
     mode: ModeKind,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -314,14 +314,6 @@ async fn explicit_catalog_refresh_appends_collaboration_messages_without_mode_or
         .await;
 
         test.submit_text_turn(turn).await?;
-        if refreshed_instructions.is_some() {
-            test.thread_manager
-                .list_models(
-                    codex_models_manager::manager::RefreshStrategy::Online,
-                    test.config.http_client_factory(),
-                )
-                .await;
-        }
         let request = response.single_request();
         let dev_texts = request.message_input_texts("developer");
         let collaboration_instructions = dev_texts

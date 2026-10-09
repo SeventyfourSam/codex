@@ -1,18 +1,15 @@
-use codex_config::CloudConfigBundle;
-use codex_config::test_support::CloudConfigBundleFixture;
-use codex_feedback::CodexFeedback;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
-use tracing_subscriber::layer::SubscriberExt;
 
+use codex_config::CloudConfigBundle;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::LoaderOverrides;
+use codex_config::test_support::CloudConfigBundleFixture;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
+use codex_feedback::CodexFeedback;
 use codex_http_client::HttpClientFactory;
 use codex_models_manager::manager::ModelsEndpointClient;
 use codex_models_manager::manager::ModelsEndpointFuture;
@@ -24,6 +21,9 @@ use codex_protocol::error::Result as CoreResult;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 use tokio::sync::Notify;
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
+use tracing_subscriber::layer::SubscriberExt;
 
 use super::*;
 
@@ -91,7 +91,7 @@ impl ModelsEndpointClient for TestModelsEndpoint {
 }
 
 #[tokio::test]
-async fn startup_refresh_checks_provider_requirements() {
+async fn refreshes_immediately_periodically_and_stops_when_dropped() {
     let codex_home = tempdir().expect("temp dir");
     let endpoint = TestModelsEndpoint::new();
     let requirements_path = codex_home.path().join("requirements.toml");
@@ -123,12 +123,14 @@ async fn startup_refresh_checks_provider_requirements() {
         /*auth_manager*/ None,
     ));
     let catalog = Arc::new(ModelCatalog::new(config_manager, config, models_manager));
-    let worker = spawn(&catalog);
+    let worker = spawn_with_interval(&catalog, Duration::from_millis(/*millis*/ 10));
 
-    endpoint.wait_for_fetch_count(/*expected*/ 1).await;
+    endpoint.wait_for_fetch_count(/*expected*/ 2).await;
     drop(worker);
+    endpoint.release_second_fetch.notify_one();
+    tokio::time::sleep(Duration::from_millis(30)).await;
 
-    assert_eq!(endpoint.fetch_count.load(Ordering::SeqCst), 1);
+    assert_eq!(endpoint.fetch_count.load(Ordering::SeqCst), 2);
 
     // Reloading config would select the newly required provider. The catalog must
     // keep validating the typed startup selection, even when only reading its cache.
@@ -144,11 +146,12 @@ async fn startup_refresh_checks_provider_requirements() {
             .unwrap()
             .is::<crate::config_manager::ModelProviderRequirementsChanged>()
     );
-    assert_eq!(endpoint.fetch_count.load(Ordering::SeqCst), 1);
+    assert_eq!(endpoint.fetch_count.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]
-async fn startup_refresh_validates_requirements_before_any_download() -> anyhow::Result<()> {
+async fn background_refresh_blocks_changed_and_invalid_requirements_then_recovers()
+-> anyhow::Result<()> {
     let home = tempdir()?;
     let config = Arc::new(
         crate::config_manager::ConfigManager::without_managed_config_for_tests(
@@ -183,27 +186,37 @@ async fn startup_refresh_validates_requirements_before_any_download() -> anyhow:
     let _subscriber_guard = tracing::subscriber::set_default(
         tracing_subscriber::registry().with(feedback.logger_layer()),
     );
-    for requirements in [
-        "model_provider = 'other'",
-        "model_provider = []",
-        "[model_providers.gateway]\nexperimental_bearer_token = 'private-provider-token-marker' trailing",
-    ] {
-        let mut worker = spawn(&catalog);
-        checks_rx
-            .recv()
-            .await
-            .unwrap()
-            .send(Some(
-                CloudConfigBundleFixture::enterprise_requirement(requirements).into_bundle(),
-            ))
-            .unwrap();
-        (&mut worker._task).await?;
-        assert_eq!(endpoint.fetch_count.load(Ordering::SeqCst), 0);
-    }
-    let mut worker = spawn(&catalog);
-    checks_rx.recv().await.unwrap().send(/*t*/ None).unwrap();
-    (&mut worker._task).await?;
-    assert_eq!(endpoint.fetch_count.load(Ordering::SeqCst), 1);
+    let worker = spawn_with_interval(&catalog, Duration::from_millis(/*millis*/ 10));
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 10), async {
+        for expected in 1..=2 {
+            checks_rx.recv().await.unwrap().send(/*t*/ None).unwrap();
+            endpoint.wait_for_fetch_count(expected).await;
+        }
+
+        // Let the in-flight request finish, then control each refresh's requirements.
+        endpoint.release_second_fetch.notify_one();
+        let mut next_check = checks_rx.recv().await.unwrap();
+        for requirements in [
+            "model_provider = 'other'",
+            "model_provider = []",
+            "[model_providers.gateway]\nexperimental_bearer_token = 'private-provider-token-marker' trailing",
+        ] {
+            next_check
+                .send(Some(
+                    CloudConfigBundleFixture::enterprise_requirement(requirements).into_bundle(),
+                ))
+                .unwrap();
+            // Reaching the next check proves the previous refresh completed. Keep
+            // this check blocked while asserting that the previous one did not fetch.
+            next_check = checks_rx.recv().await.unwrap();
+            assert_eq!(endpoint.fetch_count.load(Ordering::SeqCst), 2);
+        }
+
+        next_check.send(/*t*/ None).unwrap();
+        endpoint.wait_for_fetch_count(/*expected*/ 3).await;
+    })
+    .await?;
+    drop(worker);
     let logs = String::from_utf8(
         feedback
             .snapshot(/*session_id*/ None)

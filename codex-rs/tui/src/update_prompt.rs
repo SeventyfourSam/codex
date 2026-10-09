@@ -39,7 +39,7 @@ use ratatui::widgets::Wrap;
 #[cfg(not(debug_assertions))]
 use tokio_stream::StreamExt;
 
-const RELEASE_NOTES_URL: &str = codex_install_context::CUSTOM_RELEASE_URL;
+const RELEASE_NOTES_URL: &str = "https://github.com/openai/codex/releases/latest";
 
 #[cfg(not(debug_assertions))]
 pub(crate) enum UpdatePromptOutcome {
@@ -126,7 +126,7 @@ impl UpdatePromptScreen {
         Self {
             request_frame,
             latest_version,
-            current_version: codex_utils_cli::CUSTOM_VERSION.to_string(),
+            current_version: crate::custom_updates::current_version(update_action).to_string(),
             update_action,
             highlighted: UpdateSelection::UpdateNow,
             selection: None,
@@ -227,7 +227,9 @@ impl WidgetRef for &UpdatePromptScreen {
             /*flex*/ 1,
             Paragraph::new(Line::from(vec![
                 "Release notes: ".dim(),
-                RELEASE_NOTES_URL.dim().underlined(),
+                crate::custom_updates::release_notes_url(self.update_action, RELEASE_NOTES_URL)
+                    .dim()
+                    .underlined(),
             ]))
             .wrap(Wrap { trim: false })
             .inset(Insets::vh(/*v*/ 0, /*h*/ 2)),
@@ -266,7 +268,11 @@ impl WidgetRef for &UpdatePromptScreen {
         };
         render_menu_surface(panel, buf);
         column.render(panel, buf);
-        crate::terminal_hyperlinks::mark_underlined_hyperlink(buf, area, RELEASE_NOTES_URL);
+        crate::terminal_hyperlinks::mark_underlined_hyperlink(
+            buf,
+            area,
+            crate::custom_updates::release_notes_url(self.update_action, RELEASE_NOTES_URL),
+        );
     }
 }
 
@@ -286,7 +292,7 @@ mod tests {
         UpdatePromptScreen::new(
             FrameRequester::test_dummy(),
             "9.9.9".into(),
-            UpdateAction::StandaloneUnix,
+            UpdateAction::NpmGlobalLatest,
         )
     }
 
@@ -298,13 +304,7 @@ mod tests {
         terminal
             .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
             .expect("render update prompt");
-        let rendered = terminal.backend().to_string();
-        let rendered = rendered
-            .lines()
-            .map(str::trim_end)
-            .collect::<Vec<_>>()
-            .join("\n");
-        insta::assert_snapshot!("update_prompt_modal", rendered);
+        insta::assert_snapshot!("update_prompt_modal", terminal.backend());
     }
 
     #[test]

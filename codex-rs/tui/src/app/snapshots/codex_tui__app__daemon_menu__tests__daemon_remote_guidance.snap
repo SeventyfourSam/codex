@@ -1,6 +1,5 @@
 ---
 source: tui/src/app/daemon_menu_tests.rs
-assertion_line: 220
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
   Daemon
@@ -9,7 +8,7 @@ expression: "render_bottom_popup(&app.chat_widget, 80)"
   remote connections.
 
 
-›    Install latest custom release
+›    Install latest public stable
      Use this CLI build
 
   enter select · esc back

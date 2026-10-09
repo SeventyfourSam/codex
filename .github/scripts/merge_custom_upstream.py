@@ -11,6 +11,7 @@ from pathlib import Path
 
 import tomllib
 from custom_merge_schema import GENERATED_PATHS, regenerate_schema
+from custom_source_policy import verify_source_contracts
 
 MANIFEST = "codex-rs/Cargo.toml"
 BASELINE = Path(".github/custom-upstream-base.json")
@@ -213,6 +214,7 @@ def merge_release(version: str) -> None:
         raise ValueError(
             "Merged workspace version does not match the requested release"
         )
+    verify_source_contracts(upstream)
     regenerate_schema(upstream)
     BASELINE.parent.mkdir(parents=True, exist_ok=True)
     BASELINE.write_text(

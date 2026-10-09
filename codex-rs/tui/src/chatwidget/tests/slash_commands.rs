@@ -1422,12 +1422,6 @@ async fn usage_views_open_the_requested_summary_mode() {
         let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
         set_chatgpt_auth(&mut chat);
         chat.dispatch_command_with_args(SlashCommand::Usage, argument.to_string(), Vec::new());
-        assert_matches!(
-            rx.try_recv(),
-            Ok(AppEvent::RefreshRateLimits {
-                origin: RateLimitRefreshOrigin::UsageMenu { .. }
-            })
-        );
         match rx.try_recv().unwrap() {
             AppEvent::OpenAnalytics { view } => assert_eq!(view, Some(expected)),
             other => panic!("expected Analytics, got {other:?}"),
@@ -1444,12 +1438,6 @@ async fn usage_command_runs_with_backend_auth_without_chatgpt_account_flag() {
     );
 
     chat.dispatch_command_with_args(SlashCommand::Usage, "daily".to_string(), Vec::new());
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::UsageMenu { .. }
-        })
-    );
 
     assert_matches!(
         rx.try_recv(),
@@ -1471,12 +1459,6 @@ async fn usage_command_runs_with_backend_auth_from_widget_init() {
     .await;
 
     chat.dispatch_command_with_args(SlashCommand::Usage, "daily".to_string(), Vec::new());
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::UsageMenu { .. }
-        })
-    );
 
     assert_matches!(
         rx.try_recv(),

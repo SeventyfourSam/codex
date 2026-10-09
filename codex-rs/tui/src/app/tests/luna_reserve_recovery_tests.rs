@@ -143,7 +143,7 @@ async fn luna_reserve_entry_dispatches_an_already_queued_turn_with_accepted_sett
             &mut server,
             AppEvent::RateLimitsLoaded {
                 request_id: 1,
-                origin: RateLimitRefreshOrigin::TurnCompleted,
+                origin: RateLimitRefreshOrigin::Periodic,
                 hard_stop_generation: generation,
                 result: Ok(reserve_response()),
             },
@@ -201,7 +201,7 @@ async fn luna_reserve_recovery_restores_task_and_pending_turn_after_fresh_backen
             &mut server,
             AppEvent::RateLimitsLoaded {
                 request_id: 1,
-                origin: RateLimitRefreshOrigin::TurnCompleted,
+                origin: RateLimitRefreshOrigin::Periodic,
                 hard_stop_generation: generation,
                 result: Ok(reserve_response()),
             },
@@ -244,7 +244,7 @@ async fn luna_reserve_recovery_restores_task_and_pending_turn_after_fresh_backen
                 &mut server,
                 AppEvent::RateLimitsLoaded {
                     request_id,
-                    origin: RateLimitRefreshOrigin::TurnCompleted,
+                    origin: RateLimitRefreshOrigin::Periodic,
                     hard_stop_generation,
                     result: Ok(recovered.clone()),
                 },

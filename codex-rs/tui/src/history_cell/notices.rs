@@ -39,7 +39,7 @@ impl HistoryCell for UpdateAvailableHistoryCell {
         } else {
             line![
                 "See ",
-                "https://github.com/SeventyfourSam/codex"
+                "https://github.com/openai/codex"
                     .fg(accent_color())
                     .underlined(),
                 " for installation options."
@@ -51,17 +51,12 @@ impl HistoryCell for UpdateAvailableHistoryCell {
                 "✨\u{200A}".bold().fg(accent_color()),
                 "Update available!".bold().fg(accent_color()),
                 " ",
-                format!(
-                    "{} -> {}",
-                    codex_utils_cli::CUSTOM_VERSION,
-                    self.latest_version
-                )
-                .bold(),
+                format!("{CODEX_CLI_VERSION} -> {}", self.latest_version).bold(),
             ],
             update_instruction,
             "",
             "See full release notes:",
-            codex_install_context::CUSTOM_RELEASE_URL
+            "https://github.com/openai/codex/releases/latest"
                 .fg(accent_color())
                 .underlined(),
         ];
@@ -78,19 +73,15 @@ impl HistoryCell for UpdateAvailableHistoryCell {
         let update_instruction = if let Some(update_action) = self.update_action {
             format!("Run {} to update.", update_action.command_str())
         } else {
-            "See https://github.com/SeventyfourSam/codex for installation options.".to_string()
+            "See https://github.com/openai/codex for installation options.".to_string()
         };
         vec![
             Line::from("Update available!"),
-            Line::from(format!(
-                "{} -> {}",
-                codex_utils_cli::CUSTOM_VERSION,
-                self.latest_version
-            )),
+            Line::from(format!("{CODEX_CLI_VERSION} -> {}", self.latest_version)),
             Line::from(update_instruction),
             Line::from(""),
             Line::from("See full release notes:"),
-            Line::from(codex_install_context::CUSTOM_RELEASE_URL),
+            Line::from("https://github.com/openai/codex/releases/latest"),
         ]
     }
 

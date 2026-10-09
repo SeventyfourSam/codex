@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "CustomModelRefreshPurpose": {
+      "enum": [
+        "startup",
+        "manual"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "includeHidden": {
+      "type": "boolean"
+    },
+    "purpose": {
+      "$ref": "#/definitions/CustomModelRefreshPurpose"
+    }
+  },
+  "required": [
+    "includeHidden",
+    "purpose"
+  ],
+  "title": "CustomModelRefreshParams",
+  "type": "object"
+}

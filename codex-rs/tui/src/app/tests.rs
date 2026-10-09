@@ -7285,7 +7285,6 @@ async fn feedback_submission_stages_logs_cleans_up_and_emits_error_history_cell(
     use tracing_subscriber::fmt::writer::MakeWriter;
 
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    app.config.feedback_enabled = true;
     let (server, requests, proxy) =
         session_lifecycle_requests::start_recording_remote_app_server(&app.config).await?;
     let diagnostic = "SQLITE LOG WRITE FAILURE: disk full\n";

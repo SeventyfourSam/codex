@@ -16,14 +16,17 @@ const RATE_LIMIT_RESET_CONFIRMATION_VIEW_ID: &str = "rate-limit-reset-confirmati
 impl ChatWidget {
     pub(super) fn open_usage_menu(&mut self) {
         self.clear_pending_rate_limit_reset_hint();
+        let should_refresh_reset_availability =
+            self.custom_usage_enabled() || self.available_rate_limit_reset_credits == Some(0);
         self.bottom_pane
             .show_selection_view(self.usage_menu_params());
-        let request_id = self.take_next_rate_limit_reset_request_id();
-        self.pending_usage_menu_rate_limit_request_id = Some(request_id);
-        self.app_event_tx.send(AppEvent::RefreshRateLimits {
-            origin: RateLimitRefreshOrigin::UsageMenu { request_id },
-        });
-
+        if should_refresh_reset_availability {
+            let request_id = self.take_next_rate_limit_reset_request_id();
+            self.pending_usage_menu_rate_limit_request_id = Some(request_id);
+            self.app_event_tx.send(AppEvent::RefreshRateLimits {
+                origin: RateLimitRefreshOrigin::UsageMenu { request_id },
+            });
+        }
         self.request_redraw();
     }
 

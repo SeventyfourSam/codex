@@ -700,7 +700,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn manual_refresh_fetches_a_catalog_for_the_current_command_credentials() {
+    async fn command_auth_refresh_fetches_a_catalog_for_the_current_credentials() {
         use codex_models_manager::manager::ModelsManager;
         use codex_models_manager::manager::OpenAiModelsManager;
         use codex_models_manager::manager::RefreshStrategy;
@@ -755,10 +755,7 @@ mod tests {
         // The cached identity still matches here; resolving command auth must
         // detect the next token before deciding whether a refresh is needed.
         manager
-            .raw_model_catalog(
-                RefreshStrategy::Manual,
-                HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-            )
+            .refresh_after_auth_change(HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault))
             .await;
         assert_eq!(manager.get_remote_models().await, catalog.models);
         auth.auth().await;
@@ -789,7 +786,7 @@ mod tests {
                 .iter()
                 .map(|request| request.headers["authorization"].to_str().unwrap())
                 .collect::<Vec<_>>(),
-            vec!["Bearer token-2", "Bearer token-4", "Bearer token-8"]
+            vec!["Bearer token-2", "Bearer token-5", "Bearer token-9"]
         );
     }
 

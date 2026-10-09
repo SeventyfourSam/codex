@@ -1614,6 +1614,9 @@ impl MessageProcessor {
             ClientRequest::ModelList { params, .. } => {
                 self.catalog_processor.model_list(params).await
             }
+            ClientRequest::CustomModelRefresh { params, .. } => {
+                self.catalog_processor.custom_model_refresh(params).await
+            }
             ClientRequest::ExperimentalFeatureList { params, .. } => {
                 self.catalog_processor
                     .experimental_feature_list(params)

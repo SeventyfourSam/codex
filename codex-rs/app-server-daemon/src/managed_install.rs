@@ -230,3 +230,7 @@ mod tests;
 #[cfg(test)]
 #[path = "managed_install_path_tests.rs"]
 mod path_tests;
+
+#[cfg(test)]
+#[path = "managed_install_custom_tests.rs"]
+mod custom_tests;

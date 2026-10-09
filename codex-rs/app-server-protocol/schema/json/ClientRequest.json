@@ -761,6 +761,28 @@
       ],
       "type": "string"
     },
+    "CustomModelRefreshParams": {
+      "properties": {
+        "includeHidden": {
+          "type": "boolean"
+        },
+        "purpose": {
+          "$ref": "#/definitions/CustomModelRefreshPurpose"
+        }
+      },
+      "required": [
+        "includeHidden",
+        "purpose"
+      ],
+      "type": "object"
+    },
+    "CustomModelRefreshPurpose": {
+      "enum": [
+        "startup",
+        "manual"
+      ],
+      "type": "string"
+    },
     "CyberAccessProgram": {
       "description": "Requested cyber treatment for an OpenAI model turn. Authorization and model-tier restrictions remain server-owned.",
       "enum": [
@@ -2308,10 +2330,6 @@
             "integer",
             "null"
           ]
-        },
-        "refresh": {
-          "description": "Explicit picker refresh; reuses catalogs fetched within the past hour.",
-          "type": "boolean"
         }
       },
       "type": "object"
@@ -7617,6 +7635,30 @@
         "params"
       ],
       "title": "Model/listRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "custom/modelRefresh"
+          ],
+          "title": "Custom/modelRefreshRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/CustomModelRefreshParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Custom/modelRefreshRequest",
       "type": "object"
     },
     {

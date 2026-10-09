@@ -1,10 +1,16 @@
+#[path = "models_refresh_worker_custom.rs"]
+mod custom;
+
 use std::sync::Arc;
+use std::time::Duration;
 
 use codex_models_manager::manager::RefreshStrategy;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::model_catalog::ModelCatalog;
+
+const MODELS_REFRESH_INTERVAL: Duration = Duration::from_secs(4 * 60 + 30);
 
 #[derive(Debug)]
 pub(crate) struct ModelsRefreshWorker {
@@ -25,20 +31,37 @@ impl Drop for ModelsRefreshWorker {
 }
 
 pub(crate) fn spawn(model_catalog: &Arc<ModelCatalog>) -> ModelsRefreshWorker {
+    if custom::enabled() {
+        custom::spawn(model_catalog)
+    } else {
+        spawn_with_interval(model_catalog, MODELS_REFRESH_INTERVAL)
+    }
+}
+
+fn spawn_with_interval(
+    model_catalog: &Arc<ModelCatalog>,
+    refresh_interval: Duration,
+) -> ModelsRefreshWorker {
     let model_catalog = Arc::downgrade(model_catalog);
     let shutdown = CancellationToken::new();
     let worker_shutdown = shutdown.clone();
     let task = tokio::spawn(async move {
-        let Some(model_catalog) = model_catalog.upgrade() else {
-            return;
-        };
-        tokio::select! {
-            _ = worker_shutdown.cancelled() => {}
-            result = model_catalog.list_models(RefreshStrategy::OnlineIfUncached) => {
-                if let Err(err) = result {
-                    // Parser diagnostics can include provider credentials from the source TOML.
-                    tracing::warn!(error_kind = ?err.kind(), "model catalog refresh blocked by provider requirements");
-                }
+        loop {
+            if worker_shutdown.is_cancelled() {
+                break;
+            }
+            let Some(model_catalog) = model_catalog.upgrade() else {
+                break;
+            };
+            if let Err(err) = model_catalog.list_models(RefreshStrategy::Online).await {
+                // Parser diagnostics can include provider credentials from the source TOML.
+                tracing::warn!(error_kind = ?err.kind(), "model catalog refresh blocked by provider requirements");
+            }
+            drop(model_catalog);
+
+            tokio::select! {
+                _ = worker_shutdown.cancelled() => break,
+                _ = tokio::time::sleep(refresh_interval) => {}
             }
         }
     });

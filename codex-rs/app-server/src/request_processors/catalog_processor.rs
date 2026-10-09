@@ -1,4 +1,6 @@
 use super::*;
+#[path = "custom_models.rs"]
+mod custom_models;
 use crate::model_catalog::ModelCatalog;
 use codex_config::ConfigPathContext;
 use codex_core::config::permission_profile_catalog;
@@ -282,18 +284,13 @@ impl CatalogRequestProcessor {
         params: ModelListParams,
     ) -> Result<ModelListResponse, JSONRPCErrorError> {
         let ModelListParams {
-            refresh,
             limit,
             cursor,
             include_hidden,
         } = params;
         let presets = self
             .model_catalog
-            .list_models(if refresh {
-                codex_models_manager::manager::RefreshStrategy::Manual
-            } else {
-                codex_models_manager::manager::RefreshStrategy::Startup
-            })
+            .list_models(codex_models_manager::manager::RefreshStrategy::OnlineIfUncached)
             .await
             .map_err(|err| config_load_error(&err))?;
         let models = supported_models(presets, include_hidden.unwrap_or(false));

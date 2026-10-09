@@ -164,10 +164,7 @@ text({ names: result.skills.map(skill => skill.name), warnings: result.warnings,
     let chatgpt_base_url = server.uri();
     let mut builder = test_codex()
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
-        .with_config(move |config| {
-            config.chatgpt_base_url = chatgpt_base_url;
-            config.analytics_enabled = Some(true);
-        })
+        .with_config(move |config| config.chatgpt_base_url = chatgpt_base_url)
         // Local executors disable cloud skill discovery.
         .with_exec_server_url("none")
         .with_extensions(Arc::new(extensions.build()))

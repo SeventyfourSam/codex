@@ -53,6 +53,7 @@ static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod app_cmd;
 mod cloud_config;
+mod custom_cli;
 mod daemon_install;
 mod daemon_telemetry;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -140,14 +141,6 @@ struct MultitoolCli {
 
     #[clap(subcommand)]
     subcommand: Option<Subcommand>,
-
-    /// Print the custom build version.
-    #[arg(long, exclusive = true)]
-    custom: bool,
-
-    /// Internal: fill missing user settings for the custom installer.
-    #[arg(long, exclusive = true, hide = true)]
-    initialize_custom_config: bool,
 }
 
 #[derive(Debug, clap::Subcommand)]
@@ -1037,23 +1030,16 @@ async fn cli_main(
     arg0_paths: Arg0DispatchPaths,
     remote_control_disabled: bool,
 ) -> anyhow::Result<()> {
+    if custom_cli::handle_private_switches()? {
+        return Ok(());
+    }
     let MultitoolCli {
-        custom,
-        initialize_custom_config,
         config_overrides: mut root_config_overrides,
         feature_toggles,
         remote,
         mut interactive,
         subcommand,
     } = MultitoolCli::parse();
-    if custom {
-        println!("codex-cli {}", codex_utils_cli::CUSTOM_VERSION);
-        return Ok(());
-    }
-    if initialize_custom_config {
-        codex_config::initialize_custom_config(&find_codex_home()?)?;
-        return Ok(());
-    }
     // Retain the launch target through TUI exit, even if a launcher changes selection.
     let daemon_cli_executable = arg0_paths
         .codex_self_exe
@@ -2877,8 +2863,6 @@ mod tests {
     fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
-            custom: _,
-            initialize_custom_config: _,
             mut interactive,
             config_overrides: mut root_overrides,
             subcommand,
@@ -2916,8 +2900,6 @@ mod tests {
     fn finalize_fork_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
-            custom: _,
-            initialize_custom_config: _,
             mut interactive,
             config_overrides: mut root_overrides,
             subcommand,
@@ -2962,8 +2944,6 @@ mod tests {
     fn finalize_archive_from_args(args: &[&str]) -> (String, TuiCli, InteractiveRemoteOptions) {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
-            custom: _,
-            initialize_custom_config: _,
             interactive,
             config_overrides: root_overrides,
             subcommand,

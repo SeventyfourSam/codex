@@ -228,8 +228,8 @@ pub(crate) enum RateLimitRefreshOrigin {
     ResetConsume { request_id: u64 },
     /// Refresh backend recovery after an inference limit error.
     Recovery,
-    /// Account usage read after a live conversation turn completes.
-    TurnCompleted,
+    /// Background account usage read, scheduled more frequently near exhaustion.
+    Periodic,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

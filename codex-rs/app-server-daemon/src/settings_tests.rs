@@ -136,12 +136,11 @@ async fn telemetry_distinguishes_presence_from_default_values() -> anyhow::Resul
     let dir = home.path().join("app-server-daemon");
     tokio::fs::create_dir(&dir).await?;
     let path = dir.join("settings.json");
-    for (contents, presence, enabled) in [
-        ("{}", "default", "disabled"),
+    for (contents, presence) in [
+        ("{}", "default"),
         (
             r#"{"updater":{"autoUpdateEnabled":true,"updateIntervalMinutes":60},"shutdownGraceSeconds":60}"#,
             "configured",
-            "enabled",
         ),
     ] {
         tokio::fs::write(&path, contents).await?;
@@ -149,7 +148,7 @@ async fn telemetry_distinguishes_presence_from_default_values() -> anyhow::Resul
             crate::telemetry::settings_tags(home.path())
                 .await
                 .map(|(_, value)| value),
-            [enabled, presence, presence, presence]
+            ["enabled", presence, presence, presence]
         );
     }
     Ok(())

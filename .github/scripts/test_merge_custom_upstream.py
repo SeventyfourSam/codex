@@ -284,6 +284,48 @@ class MergeUpstreamTests(unittest.TestCase):
                 self.run_merge()
         regenerate.assert_not_called()
 
+    def test_cli_compile_failure_stops_before_commit_and_preserves_lockfile(self):
+        self.schema_upgrade()
+        cli = Path("codex-rs/cli/Cargo.toml")
+        cli.parent.mkdir(parents=True)
+        cli.write_text('[package]\nname = "fixture"\n')
+        self.commit("CLI fixture")
+        before = self.git("rev-parse", "HEAD")
+        real_run = subprocess.run
+        commands = []
+
+        def run(command, **kwargs):
+            if command[0] == "just":
+                commands.append(command)
+                return subprocess.CompletedProcess(command, 0)
+            if command[0] == "cargo":
+                commands.append(command)
+                self.assertEqual(kwargs["cwd"], "codex-rs")
+                Path("codex-rs/Cargo.lock").write_bytes(b"cargo normalized versions\n")
+                raise subprocess.CalledProcessError(1, command)
+            return real_run(command, **kwargs)
+
+        with patch.object(schema.subprocess, "run", side_effect=run):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.run_merge()
+        self.assertEqual(
+            commands[-1],
+            [
+                "cargo",
+                "check",
+                "-p",
+                "codex-cli",
+                "-p",
+                "codex-tui",
+                "--tests",
+                "--message-format",
+                "short",
+            ],
+        )
+        self.assertEqual(self.git("rev-parse", "HEAD"), before)
+        self.assertFalse(merge.BASELINE.exists())
+        self.assertEqual(Path("codex-rs/Cargo.lock").read_bytes(), b"merged lock\n")
+
     def test_leftover_conflict_markers_do_not_commit(self):
         self.git("switch", "release")
         Path("broken.txt").write_text(

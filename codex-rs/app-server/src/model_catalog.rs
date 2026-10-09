@@ -1,6 +1,8 @@
 //! Gates access to the retained startup model catalog on current managed provider requirements.
 
 use std::sync::Arc;
+#[path = "custom_model_catalog.rs"]
+mod custom_models;
 
 use codex_core::config::Config;
 use codex_models_manager::manager::RefreshStrategy;
