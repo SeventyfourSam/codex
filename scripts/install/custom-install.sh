@@ -71,7 +71,7 @@ if [ "${CODEX_INSTALL_IF_LATEST:-0}" = 1 ] || [ "${CODEX_INSTALL_IF_CURRENT:-0}"
   fi
 fi
 package_complete() {
-  [ -f "$1/codex-package.json" ] && [ -x "$1/bin/codex" ] && [ -x "$1/bin/codex-code-mode-host" ] && [ -x "$1/codex-path/rg" ] && [ -x "$1/codex-resources/zsh/bin/zsh" ] &&
+  [ -f "$1/codex-package.json" ] && [ -x "$1/bin/codex" ] && [ -x "$1/bin/codex-code-mode-host" ] && [ -x "$1/codex-path/rg" ] &&
     [ "$("$1/bin/codex" --version)" = "codex-cli $base" ] && [ "$("$1/bin/codex" --custom)" = "codex-cli $version" ]
 }
 destination=$releases/$name

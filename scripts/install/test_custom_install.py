@@ -85,9 +85,9 @@ else:
         for file in [
             "bin/codex-code-mode-host",
             "codex-path/rg",
-            "codex-resources/zsh/bin/zsh",
         ]:
             self.executable(package / file, "#!/bin/sh\nexit 0\n")
+        (package / "codex-resources").mkdir()
         (package / "codex-package.json").write_text(json.dumps({"version": "0.159.0"}))
         asset = f"codex-{version}-aarch64-apple-darwin.tar.gz"
         archive = self.root / asset
