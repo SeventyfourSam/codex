@@ -25,8 +25,9 @@ impl CatalogRequestProcessor {
             .custom_refresh_models(purpose)
             .await
             .map_err(|error| config_load_error(&error))?;
-        self.list_models(query)
-            .await
-            .map(|catalog| Some(CustomModelRefreshResponse { catalog }.into()))
+        let Some(ClientResponsePayload::ModelList(catalog)) = self.model_list(query).await? else {
+            return Err(internal_error("model/list returned an unexpected response"));
+        };
+        Ok(Some(CustomModelRefreshResponse { catalog }.into()))
     }
 }

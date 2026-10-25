@@ -8,12 +8,12 @@ impl ModelCatalog {
         &self,
         purpose: CustomRefreshPurpose,
     ) -> std::io::Result<Vec<ModelPreset>> {
+        let (config, models_manager) = self.current().await?;
         self.config_manager
-            .check_thread_model_provider(&self.config)
+            .check_thread_model_provider(&config)
             .await?;
-        Ok(self
-            .models_manager
-            .custom_refresh_models(purpose, self.config.http_client_factory())
+        Ok(models_manager
+            .custom_refresh_models(purpose, config.http_client_factory())
             .await)
     }
 }

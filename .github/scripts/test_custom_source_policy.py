@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -5,6 +6,20 @@ from pathlib import Path
 from unittest.mock import patch
 
 import custom_source_policy as policy
+
+
+class RepositorySourcePolicyTests(unittest.TestCase):
+    def test_current_sources_preserve_recorded_upstream_contracts(self):
+        root = Path(__file__).resolve().parents[2]
+        previous = Path.cwd()
+        try:
+            os.chdir(root)
+            baseline = json.loads(
+                Path(".github/custom-upstream-base.json").read_text(encoding="utf-8")
+            )
+            policy.verify_source_contracts(baseline["commit"])
+        finally:
+            os.chdir(previous)
 
 
 class SourcePolicyTests(unittest.TestCase):
@@ -82,3 +97,27 @@ class SourcePolicyTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "keep upstream UpdateAction unchanged"):
             policy.verify_source_contracts("upstream")
+
+    def test_blank_line_only_change_is_rejected(self):
+        original = 'mod first;\n#[path = "second.rs"]\nmod second;\n'
+        self.files[self.test_file] = original
+        Path(self.test_file).write_text(
+            original.replace("mod first;\n", "mod first;\n\n"), encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "blank-line-only changes"):
+            policy.verify_source_contracts("upstream")
+
+    def test_new_custom_code_can_have_blank_lines(self):
+        Path(self.test_file).write_text(
+            self.files[self.test_file] + "\nfn custom_helper() {}\n",
+            encoding="utf-8",
+        )
+        policy.verify_source_contracts("upstream")
+
+    def test_blank_line_in_a_string_is_not_treated_as_module_formatting(self):
+        original = '#[test]\nfn upstream_test() {\n    let text = r#"a\nb"#;\n}\n'
+        self.files[self.test_file] = original
+        Path(self.test_file).write_text(
+            original.replace("a\nb", "a\n\nb"), encoding="utf-8"
+        )
+        policy.verify_source_contracts("upstream")

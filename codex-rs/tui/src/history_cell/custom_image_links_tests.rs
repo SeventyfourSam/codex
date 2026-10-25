@@ -52,7 +52,15 @@ fn viewed_image_links_preserve_rendering_and_encoded_paths() {
         url.to_file_path().unwrap().canonicalize().unwrap(),
         path.canonicalize().unwrap()
     );
-    let cell = new_view_image_tool_call(LegacyAppPathString::from_string(path.to_string_lossy()));
+    let cell = new_view_image_tool_call(
+        "custom-image-link".into(),
+        LegacyAppPathString::from_string(path.to_string_lossy()),
+    );
+    assert_eq!(cell.activity_ids(), vec!["image-view:custom-image-link"]);
+    assert_eq!(
+        cell.image_path().unwrap().as_path().canonicalize().unwrap(),
+        path.canonicalize().unwrap()
+    );
     let mut snapshots = Vec::new();
     for width in [0, 8, 22, 80] {
         let compact = cell.display_hyperlink_lines(width);
@@ -144,8 +152,10 @@ fn cli_image_only_links_include_split_placeholders() {
 fn absent_images_and_plain_placeholder_text_stay_unlinked() {
     let temp = tempfile::tempdir().unwrap();
     let missing = temp.path().join("missing.png");
-    let cell =
-        new_view_image_tool_call(LegacyAppPathString::from_string(missing.to_string_lossy()));
+    let cell = new_view_image_tool_call(
+        "custom-missing-image".into(),
+        LegacyAppPathString::from_string(missing.to_string_lossy()),
+    );
     assert!(
         cell.display_hyperlink_lines(/*width*/ 80)
             .iter()
@@ -194,9 +204,10 @@ fn image_clicks_reuse_transcript_open_link_and_survive_resize() {
             vec![path.clone()],
             Vec::new(),
         )),
-        Arc::new(new_view_image_tool_call(LegacyAppPathString::from_string(
-            path.to_string_lossy(),
-        ))),
+        Arc::new(new_view_image_tool_call(
+            "custom-click-image".into(),
+            LegacyAppPathString::from_string(path.to_string_lossy()),
+        )),
     ];
     let mut view = TranscriptView::default();
     for width in [80, 20, 80] {

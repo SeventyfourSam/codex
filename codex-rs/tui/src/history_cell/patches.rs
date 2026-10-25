@@ -159,17 +159,18 @@ impl HistoryCell for PatchFailureCell {
 
 #[derive(Debug)]
 pub(crate) struct ViewImageHistoryCell {
+    activity_id: String,
     filename: String,
     path_label: String,
 }
 
 impl HistoryCell for ViewImageHistoryCell {
-    fn display_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
-        super::custom_image_links::viewed_image(self.display_lines(width), &self.path_label)
+    fn activity_ids(&self) -> Vec<String> {
+        vec![self.activity_id.clone()]
     }
 
-    fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
-        super::custom_image_links::viewed_image(self.transcript_lines(width), &self.path_label)
+    fn image_path(&self) -> Option<AbsolutePathBuf> {
+        LegacyAppPathString::from_string(self.path_label.clone()).to_inferred_abs_path()
     }
 
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
@@ -197,14 +198,26 @@ impl HistoryCell for ViewImageHistoryCell {
     fn raw_lines(&self) -> Vec<Line<'static>> {
         vec![Line::from(format!("Viewed image {}", self.path_label))]
     }
+
+    fn display_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        super::custom_image_links::viewed_image(self.display_lines(width), &self.path_label)
+    }
+
+    fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        super::custom_image_links::viewed_image(self.transcript_lines(width), &self.path_label)
+    }
 }
 
-pub(crate) fn new_view_image_tool_call(path: LegacyAppPathString) -> ViewImageHistoryCell {
+pub(crate) fn new_view_image_tool_call(
+    id: String,
+    path: LegacyAppPathString,
+) -> ViewImageHistoryCell {
     let filename = path
         .to_inferred_path_uri()
         .and_then(|path| path.basename())
         .unwrap_or_else(|| path.render_for_ui());
     ViewImageHistoryCell {
+        activity_id: format!("image-view:{id}"),
         filename,
         path_label: path.into_string(),
     }
@@ -215,7 +228,7 @@ pub(crate) fn new_image_generation_call(
     status: &str,
     revised_prompt: Option<String>,
     saved_path: Option<AbsolutePathBuf>,
-) -> PlainHistoryCell {
+) -> ImageGenerationHistoryCell {
     let detail = revised_prompt.unwrap_or(call_id);
     let heading = if status == "failed" {
         vec!["✗ ".red().bold(), "Image generation failed".bold()].into()
@@ -223,12 +236,35 @@ pub(crate) fn new_image_generation_call(
         vec!["• ".dim(), "Generated Image:".bold()].into()
     };
     let mut lines: Vec<Line<'static>> = vec![heading, vec!["  └ ".dim(), detail.dim()].into()];
-    if let Some(saved_path) = saved_path {
+    if let Some(saved_path) = &saved_path {
         let saved_path = Url::from_file_path(saved_path.as_path())
             .map(|url| url.to_string())
             .unwrap_or_else(|_| saved_path.display().to_string());
         lines.push(vec!["  └ ".dim(), "Saved to: ".dim(), saved_path.into()].into());
     }
 
-    PlainHistoryCell { lines }
+    ImageGenerationHistoryCell {
+        lines,
+        saved_path: saved_path.filter(|_| status != "failed"),
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ImageGenerationHistoryCell {
+    lines: Vec<Line<'static>>,
+    saved_path: Option<AbsolutePathBuf>,
+}
+
+impl HistoryCell for ImageGenerationHistoryCell {
+    fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
+        self.lines.clone()
+    }
+
+    fn raw_lines(&self) -> Vec<Line<'static>> {
+        plain_lines(self.lines.clone())
+    }
+
+    fn image_path(&self) -> Option<AbsolutePathBuf> {
+        self.saved_path.clone()
+    }
 }

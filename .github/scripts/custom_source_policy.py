@@ -2,6 +2,7 @@
 
 import re
 import subprocess
+from difflib import SequenceMatcher
 from pathlib import Path
 
 CONTRACTS = (
@@ -41,6 +42,25 @@ def test_names(source: str) -> set[str]:
     )
 
 
+def blank_line_only_module_changes(original: str, current: str) -> list[int]:
+    """Catch formatting-only edits in module indexes, without policing string contents."""
+    before, after = original.splitlines(), current.splitlines()
+    lines = []
+    for operation, start_before, end_before, start_after, end_after in SequenceMatcher(
+        None, before, after
+    ).get_opcodes():
+        changes = before[start_before:end_before] + after[start_after:end_after]
+        if operation == "equal" or any(line.strip() for line in changes):
+            continue
+        previous = next((line for line in reversed(before[:start_before]) if line.strip()), "")
+        following = next((line for line in before[end_before:] if line.strip()), "")
+        if re.fullmatch(r"\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+;\s*", previous) and (
+            re.match(r"\s*(?:mod\s|#\[path\s*=)", following) or not following
+        ):
+            lines.append(start_after + 1)
+    return lines
+
+
 def verify_source_contracts(upstream: str) -> None:
     errors = []
     for path, name in CONTRACTS:
@@ -76,6 +96,8 @@ def verify_source_contracts(upstream: str) -> None:
             errors.append(
                 f"{path}: removed or renamed upstream tests {sorted(removed)}"
             )
+        if lines := blank_line_only_module_changes(original, current):
+            errors.append(f"{path}: remove blank-line-only changes near lines {lines}")
     if errors:
         raise ValueError("Custom source policy failed:\n" + "\n".join(errors))
     print(
