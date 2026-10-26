@@ -772,7 +772,7 @@ impl ChatWidget {
                 .map(|remaining| format!("Context {remaining}% left")),
             StatusLineItem::ContextUsed => self
                 .status_line_context_used_percent()
-                .map(|used| format!("Context {used}% used")),
+                .map(|used| self.custom_context_used_display(used)),
             StatusLineItem::FiveHourLimit => {
                 let (window, is_secondary) = self
                     .rate_limit_snapshots_by_limit_id
@@ -787,7 +787,7 @@ impl ChatWidget {
                     .get("codex")
                     .and_then(weekly_status_window)?;
                 let label = limit_label_for_window(window.window_minutes, is_secondary);
-                self.status_line_limit_display(Some(window), &label)
+                self.custom_weekly_limit_display(window, &label)
             }
             StatusLineItem::CodexVersion => Some(CODEX_CLI_VERSION.to_string()),
             StatusLineItem::ContextWindowSize => self
