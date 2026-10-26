@@ -41,6 +41,7 @@ pub(crate) enum StatusSurfacePreviewItem {
     ModelWithReasoning,
     Reasoning,
     TaskProgress,
+    TokenOutputSpeed,
 }
 
 impl StatusSurfacePreviewItem {
@@ -79,6 +80,7 @@ impl StatusSurfacePreviewItem {
             StatusSurfacePreviewItem::ModelWithReasoning => "gpt-5.2-codex medium",
             StatusSurfacePreviewItem::Reasoning => "medium",
             StatusSurfacePreviewItem::TaskProgress => "Tasks 0/0",
+            StatusSurfacePreviewItem::TokenOutputSpeed => "42.0 tk/s",
         }
     }
 
@@ -117,6 +119,7 @@ impl StatusSurfacePreviewItem {
             Self::ModelWithReasoning,
             Self::Reasoning,
             Self::TaskProgress,
+            Self::TokenOutputSpeed,
         ]
         .into_iter()
     }

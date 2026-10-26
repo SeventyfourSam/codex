@@ -1,5 +1,6 @@
 pub mod auth_storage;
 pub(crate) mod config;
+pub mod custom_output_speed;
 mod events;
 pub(crate) mod metrics;
 pub(crate) mod provider;

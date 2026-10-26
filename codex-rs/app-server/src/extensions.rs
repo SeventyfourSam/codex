@@ -133,6 +133,7 @@ pub(crate) fn thread_extensions(
         },
     );
     builder.model_request_contributor(sample_responses);
+    builder.model_request_contributor(Arc::new(crate::custom_output_speed::OutputSpeed));
     Arc::new(builder.build())
 }
 

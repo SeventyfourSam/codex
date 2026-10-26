@@ -849,6 +849,10 @@ impl ChatWidget {
                 .or_else(|| self.thread_id.map(|id| id.to_string())),
             StatusLineItem::WorkspaceHeadline => self.status_line_workspace_headline.clone(),
             StatusLineItem::TaskProgress => self.terminal_title_task_progress(),
+            StatusLineItem::TokenOutputSpeed => codex_otel::custom_output_speed::display(
+                self.thread_id,
+                self.remote_connection.is_none(),
+            ),
         }
     }
 
@@ -897,6 +901,7 @@ impl ChatWidget {
             StatusSurfacePreviewItem::Model => StatusLineItem::ModelName,
             StatusSurfacePreviewItem::ModelWithReasoning => StatusLineItem::ModelWithReasoning,
             StatusSurfacePreviewItem::Reasoning => StatusLineItem::Reasoning,
+            StatusSurfacePreviewItem::TokenOutputSpeed => StatusLineItem::TokenOutputSpeed,
         };
         self.status_line_value_for_item(status_line_item)
     }

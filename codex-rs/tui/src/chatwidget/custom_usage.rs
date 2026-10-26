@@ -3,6 +3,10 @@
 use super::*;
 use codex_app_server_protocol::TurnStatus;
 
+#[cfg(test)]
+#[path = "custom_output_speed_tests.rs"]
+mod output_speed_tests;
+
 #[derive(Debug)]
 pub(super) struct CustomUsageState {
     pub(super) enabled: bool,

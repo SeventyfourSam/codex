@@ -158,6 +158,9 @@ pub(crate) enum StatusLineItem {
 
     /// Latest checklist task progress from `update_plan` (if available).
     TaskProgress,
+
+    /// Average output rate of the last completed model request.
+    TokenOutputSpeed,
 }
 
 impl StatusLineItem {
@@ -219,6 +222,9 @@ impl StatusLineItem {
             StatusLineItem::TaskProgress => {
                 "Latest task progress from update_plan (omitted until available)"
             }
+            StatusLineItem::TokenOutputSpeed => {
+                "Last local model request: output tokens / request time (no daemon/remote)"
+            }
         }
     }
 
@@ -255,6 +261,7 @@ impl StatusLineItem {
             StatusLineItem::ThreadTitle => StatusSurfacePreviewItem::ThreadTitle,
             StatusLineItem::WorkspaceHeadline => StatusSurfacePreviewItem::WorkspaceHeadline,
             StatusLineItem::TaskProgress => StatusSurfacePreviewItem::TaskProgress,
+            StatusLineItem::TokenOutputSpeed => StatusSurfacePreviewItem::TokenOutputSpeed,
         }
     }
 }

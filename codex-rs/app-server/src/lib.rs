@@ -114,6 +114,7 @@ mod config_manager_service;
 mod connection_cleanup;
 mod connection_rpc_gate;
 mod current_time;
+mod custom_output_speed;
 mod daemon_thread_recovery;
 mod dynamic_tools;
 mod effective_plugin_change;
