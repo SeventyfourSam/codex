@@ -27,6 +27,12 @@ pub(crate) struct RefreshState {
 }
 
 impl RefreshPolicy {
+    /// Keep per-catalog memory separate; endpoint identities partition the shared disk ledger.
+    pub(crate) fn inherit(&mut self, parent: &Self) {
+        self.enabled = parent.enabled;
+        self.path = parent.path.clone();
+    }
+
     pub(crate) async fn reserve(
         &self,
         state: &mut RefreshState,
