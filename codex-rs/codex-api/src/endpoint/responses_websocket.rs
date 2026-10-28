@@ -49,6 +49,9 @@ use tungstenite::extensions::compression::deflate::DeflateConfig;
 use tungstenite::protocol::WebSocketConfig;
 use url::Url;
 
+#[path = "responses_websocket_custom_payload.rs"]
+mod custom_payload;
+
 struct WsStream {
     tx_command: mpsc::Sender<WsCommand>,
     rx_message: mpsc::UnboundedReceiver<Result<Message, WsError>>,
@@ -339,7 +342,7 @@ impl ResponsesWebsocketConnection {
 
                     tokio::select! {
                         biased;
-                        result = run_websocket_response_stream(
+                        result = custom_payload::run(
                             ws_stream,
                             tx_event.clone(),
                             request_text,
