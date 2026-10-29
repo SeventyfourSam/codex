@@ -440,7 +440,7 @@ impl App {
                 let cwd = self.chat_widget.config_ref().cwd.to_path_buf();
                 self.chat_widget.refresh_plugin_mentions();
                 self.chat_widget.submit_op(AppCommand::reload_user_config());
-                self.fetch_plugins_list(app_server_client, cwd);
+                super::plugin_mentions::custom::refresh_visible_catalog(self, app_server_client, cwd);
                 if should_report_completion {
                     self.chat_widget.add_plain_history_lines(
                         crate::external_agent_config_migration::flow::external_agent_config_migration_finished_lines(notification),

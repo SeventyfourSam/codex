@@ -21,6 +21,7 @@ def main() -> None:
     original_manifest, original_lock = manifest.read_bytes(), lockfile.read_bytes()
     env = os.environ.copy()
     env["CODEX_CUSTOM_USAGE_POLICY"] = "upstream"
+    env["CODEX_CUSTOM_PLUGIN_CATALOG_POLICY"] = "upstream"
     try:
         manifest.write_text(
             replace_version(original_manifest.decode("utf-8"), "0.0.0"),

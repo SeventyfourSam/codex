@@ -1,5 +1,7 @@
 #[path = "remote_mutations.rs"]
 mod remote_mutations;
+#[path = "manager_custom_catalog.rs"]
+mod custom_catalog;
 pub use remote_mutations::RemotePluginInstallOutcome;
 pub use remote_mutations::RemotePluginInstallRequest;
 pub use remote_mutations::RemotePluginOperationError;
@@ -1794,7 +1796,7 @@ impl PluginsManager {
         scopes: BTreeSet<RemotePluginScope>,
         mode: RemoteCatalogCacheRefreshMode,
     ) {
-        if !config.plugins_enabled || scopes.is_empty() {
+        if !config.plugins_enabled || scopes.is_empty() || !custom_catalog::allow_refresh(mode) {
             return;
         }
 

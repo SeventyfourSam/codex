@@ -27,6 +27,9 @@ class CompatRunnerTests(unittest.TestCase):
                     self.assertEqual(
                         kwargs["env"]["CODEX_CUSTOM_USAGE_POLICY"], "upstream"
                     )
+                    self.assertEqual(
+                        kwargs["env"]["CODEX_CUSTOM_PLUGIN_CATALOG_POLICY"], "upstream"
+                    )
                     lock.write_bytes(b"Cargo normalized versions\n")
                     return subprocess.CompletedProcess(command, 1)
 

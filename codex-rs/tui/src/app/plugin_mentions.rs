@@ -1,10 +1,11 @@
 //! Plugin mention capability enrichment for the TUI.
 //!
-//! Mention inventory comes from app-server `plugin/list`, matching the GUI
-//! client. The current API exposes plugin-level mention metadata there, but not
-//! effective per-session capability summaries.
+//! Custom builds load installed-plugin summaries without downloading the catalog.
+//! These summaries do not expose effective per-session capability details.
 
-use super::background_requests::request_plugin_list;
+#[path = "plugin_mentions_custom.rs"]
+pub(super) mod custom;
+use custom::request_plugin_list;
 use super::*;
 use codex_app_server_protocol::PluginAvailability;
 use codex_app_server_protocol::PluginListResponse;
