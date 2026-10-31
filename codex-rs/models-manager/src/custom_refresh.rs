@@ -75,7 +75,7 @@ impl OpenAiModelsManager {
             CUSTOM_CACHE_TTL
         };
         let fetched_at = if cached {
-            Some(self.remote_models.read().await.fetched_at)
+            Some(self.remote_models.read().await.entry.fetched_at)
         } else {
             None
         };

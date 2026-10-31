@@ -118,7 +118,7 @@ pub(super) fn user_images(cell: &UserHistoryCell, lines: &mut [HyperlinkLine], w
     // Match the upstream renderer's decision to discard element byte offsets
     // when sanitizing text or trimming a spoken message changes its contents.
     if sanitize_user_text(cell.message.as_str().into()) != cell.message
-        || cell.spoken && cell.message.trim_start() != cell.message
+        || cell.is_spoken() && cell.message.trim_start() != cell.message
     {
         return;
     }

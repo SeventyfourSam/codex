@@ -14,27 +14,30 @@ pub(crate) async fn fetch_models(
     request_id: RequestId,
     purpose: CustomModelRefreshPurpose,
 ) -> Result<ModelListResponse, TypedRequestError> {
-    let result = handle
-        .request_typed(ClientRequest::CustomModelRefresh {
-            request_id: request_id.clone(),
-            params: CustomModelRefreshParams {
-                purpose,
-                include_hidden: true,
-            },
-        })
-        .await;
-    if result.as_ref().is_err_and(is_unsupported_method) {
-        return handle
-            .request_typed(ClientRequest::ModelList {
-                request_id,
-                params: ModelListParams {
-                    include_hidden: Some(true),
-                    ..Default::default()
+    // Hosted sessions expose the upstream catalog; custom refreshes belong to our server.
+    if !matches!(handle, AppServerRequestHandle::Cloud(_)) {
+        let result = handle
+            .request_typed(ClientRequest::CustomModelRefresh {
+                request_id: request_id.clone(),
+                params: CustomModelRefreshParams {
+                    purpose,
+                    include_hidden: true,
                 },
             })
             .await;
+        if !result.as_ref().is_err_and(is_unsupported_method) {
+            return result;
+        }
     }
-    result
+    handle
+        .request_typed(ClientRequest::ModelList {
+            request_id,
+            params: ModelListParams {
+                include_hidden: Some(true),
+                ..Default::default()
+            },
+        })
+        .await
 }
 
 fn is_unsupported_method(error: &TypedRequestError) -> bool {
