@@ -728,6 +728,10 @@ impl ChatWidget {
     /// git metadata.
     pub(super) fn status_line_value_for_item(&mut self, item: StatusLineItem) -> Option<String> {
         match item {
+            StatusLineItem::TokenOutputSpeed => codex_otel::custom_output_speed::display(
+                self.thread_id,
+                self.remote_connection.is_none(),
+            ),
             StatusLineItem::ModelName => Some(self.model_display_name().to_string()),
             StatusLineItem::ModelWithReasoning => Some(self.model_with_reasoning_display_name()),
             StatusLineItem::Reasoning => Some(self.reasoning_display_name()),
@@ -849,10 +853,6 @@ impl ChatWidget {
                 .or_else(|| self.thread_id.map(|id| id.to_string())),
             StatusLineItem::WorkspaceHeadline => self.status_line_workspace_headline.clone(),
             StatusLineItem::TaskProgress => self.terminal_title_task_progress(),
-            StatusLineItem::TokenOutputSpeed => codex_otel::custom_output_speed::display(
-                self.thread_id,
-                self.remote_connection.is_none(),
-            ),
         }
     }
 
@@ -868,6 +868,7 @@ impl ChatWidget {
         item: StatusSurfacePreviewItem,
     ) -> Option<String> {
         let status_line_item = match item {
+            StatusSurfacePreviewItem::TokenOutputSpeed => StatusLineItem::TokenOutputSpeed,
             StatusSurfacePreviewItem::AppName => return Some("codex".to_string()),
             StatusSurfacePreviewItem::ProjectName => return self.terminal_title_project_name(),
             StatusSurfacePreviewItem::ProjectRoot => StatusLineItem::ProjectRoot,
@@ -903,7 +904,6 @@ impl ChatWidget {
             StatusSurfacePreviewItem::Reasoning => StatusLineItem::Reasoning,
             StatusSurfacePreviewItem::Profile => StatusLineItem::Profile,
             StatusSurfacePreviewItem::Provider => StatusLineItem::Provider,
-            StatusSurfacePreviewItem::TokenOutputSpeed => StatusLineItem::TokenOutputSpeed,
         };
         self.status_line_value_for_item(status_line_item)
     }

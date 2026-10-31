@@ -36,6 +36,7 @@ enum StatusLineAccent {
 impl StatusLineAccent {
     fn for_item(item: StatusLineItem) -> Self {
         match item {
+            StatusLineItem::TokenOutputSpeed => Self::Usage,
             StatusLineItem::ModelName
             | StatusLineItem::ModelWithReasoning
             | StatusLineItem::Provider
@@ -67,7 +68,6 @@ impl StatusLineAccent {
             | StatusLineItem::ThreadTitle
             | StatusLineItem::WorkspaceHeadline => Self::Thread,
             StatusLineItem::TaskProgress => Self::Progress,
-            StatusLineItem::TokenOutputSpeed => Self::Usage,
         }
     }
 

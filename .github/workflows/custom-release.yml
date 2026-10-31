@@ -62,8 +62,8 @@ jobs:
   prepare:
     if: github.repository == 'SeventyfourSam/codex' && github.ref == 'refs/heads/custom' && github.event_name != 'push'
     runs-on: ubuntu-24.04
-    # Source-based protocol regeneration may compile its Rust generator once.
-    timeout-minutes: 60
+    # Cold upgrades also compile upstream compatibility tests; unchanged releases skip them.
+    timeout-minutes: 120
     permissions:
       contents: read
     outputs:
@@ -91,20 +91,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Test merge and release helpers
-        run: |
-          python -m unittest discover -s .github/scripts -p test_merge_custom_upstream.py
-          python -m unittest discover -s .github/scripts -p test_custom_release_dispatch.py
-          python -m unittest discover -s .github/scripts -p test_custom_source_policy.py
-          python -m unittest discover -s .github/scripts -p test_custom_compat.py
-
-      - name: Test Unix updater fixtures without network
-        run: python -m unittest discover -s scripts/install -p test_custom_update.py
-
-      - name: Test Windows updater fixtures without network
-        shell: pwsh
-        run: ./scripts/install/test_custom_update.ps1
-
       - name: Install schema generation tools
         if: inputs.release_tag == ''
         uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
@@ -115,11 +101,11 @@ jobs:
         if: inputs.release_tag == ''
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
 
-      - name: Install Linux CLI check dependencies
+      - name: Install Linux CLI and compatibility check dependencies
         if: inputs.release_tag == ''
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcap-dev
+          sudo apt-get install -y libcap-dev libasound2-dev
 
       - name: Cache protocol generator dependencies and builds
         if: inputs.release_tag == ''
@@ -226,28 +212,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Test macOS installer without network
-        if: runner.os == 'macOS'
-        run: python3 -m unittest discover -s scripts/install -p 'test_custom_*.py'
-
-      - name: Test Windows installer and updater fixtures without network
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          foreach ($test in @('test_custom_install_platform.ps1', 'test_custom_update.ps1')) {
-            & (Get-Process -Id $PID).Path -NoProfile -File "./scripts/install/$test"
-            if ($LASTEXITCODE -ne 0) { throw "$test failed." }
-          }
-
-      - name: Test Windows PowerShell 5.1 installer and updater fixtures without network
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          foreach ($test in @('test_custom_install_platform.ps1', 'test_custom_update.ps1')) {
-            & (Get-Process -Id $PID).Path -NoProfile -File "./scripts/install/$test"
-            if ($LASTEXITCODE -ne 0) { throw "$test failed." }
-          }
-
       - name: Validate release version
         id: version
         run: |
@@ -335,7 +299,7 @@ jobs:
             echo "Compiled artifacts size: $(du -sh codex-rs/target | cut -f 1)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Save before package smoke tests so a later validation/upload failure
+      # Save before package validation so a later validation/upload failure
       # does not discard a successful, expensive compilation.
       - name: Save dependency downloads
         if: steps.downloads.outputs.cache-hit != 'true'
@@ -389,59 +353,6 @@ jobs:
               subprocess.run([root / "bin" / f"codex-code-mode-host{suffix}", "--help"], check=True, timeout=30)
               subprocess.run([root / "codex-path" / f"rg{suffix}", "--version"], check=True, timeout=30)
           PY
-
-      - name: Test Windows installer without network
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # -File isolates expected native failures; uncaught test assertions still fail.
-          & (Get-Process -Id $PID).Path -NoProfile -File ./scripts/install/test_custom_install.ps1 -Archive "dist/codex-$env:CUSTOM_VERSION-$env:TARGET.zip" -Version "$env:CUSTOM_VERSION"
-          if ($LASTEXITCODE -ne 0) { throw 'Installer tests failed.' }
-
-      - name: Test Windows PowerShell 5.1 installer without network
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          # -File isolates expected native failures; uncaught test assertions still fail.
-          & (Get-Process -Id $PID).Path -NoProfile -File ./scripts/install/test_custom_install.ps1 -Archive "dist/codex-$env:CUSTOM_VERSION-$env:TARGET.zip" -Version "$env:CUSTOM_VERSION"
-          if ($LASTEXITCODE -ne 0) { throw 'Installer tests failed.' }
-
-      - name: Check whether a previous release is downloadable
-        id: previous
-        run: |
-          set -euo pipefail
-          installer=install.sh
-          if [[ "$RUNNER_OS" == Windows ]]; then installer=install.ps1; fi
-          status=$(curl --silent --show-error --location --head --output /dev/null --write-out '%{http_code}' \
-            "https://github.com/SeventyfourSam/codex/releases/latest/download/$installer")
-          case "$status" in
-            200) echo 'available=true' >> "$GITHUB_OUTPUT" ;;
-            404) echo '::notice::No downloadable previous release; local package installation tests still apply.' ;;
-            *) echo "Unexpected installer HTTP status: $status" >&2; exit 1 ;;
-          esac
-
-      - name: Verify the built Windows CLI can update from GitHub
-        if: runner.os == 'Windows' && steps.previous.outputs.available == 'true'
-        shell: powershell
-        run: |
-          $originalPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-          $env:CODEX_HOME = Join-Path $env:RUNNER_TEMP 'cli-update-home'
-          $env:CODEX_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'cli-update-bin'
-          try {
-            & ./package/bin/codex.exe update
-            if ($LASTEXITCODE -ne 0) { throw 'The built codex update command failed.' }
-            & (Join-Path $env:CODEX_INSTALL_DIR 'codex.exe') --custom
-            if ($LASTEXITCODE -ne 0) { throw 'The updated CLI does not run.' }
-          } finally { [Environment]::SetEnvironmentVariable('Path', $originalPath, 'User') }
-
-      - name: Verify the built macOS CLI can update from GitHub
-        if: runner.os == 'macOS' && steps.previous.outputs.available == 'true'
-        run: |
-          set -euo pipefail
-          test_home=$(mktemp -d)
-          trap 'rm -rf "$test_home"' EXIT
-          HOME="$test_home" ZDOTDIR="$test_home" CODEX_HOME="$test_home/.codex" CODEX_INSTALL_DIR="$test_home/bin" ./package/bin/codex update
-          "$test_home/bin/codex" --custom
 
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:

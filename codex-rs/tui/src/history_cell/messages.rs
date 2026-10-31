@@ -301,7 +301,7 @@ impl HistoryCell for UserHistoryCell {
                 UserMessagePresentation::Plain | UserMessagePresentation::Spoken
             );
         }
-        super::custom_image_links::user_images(self, &mut lines, width);
+        super::custom_image_links::user_images(self, &mut lines, width, text_elements);
         lines
     }
 

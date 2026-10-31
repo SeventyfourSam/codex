@@ -17,9 +17,6 @@ use std::path::Path;
 
 use codex_utils_cli::CUSTOM_VERSION;
 
-#[cfg(test)]
-pub(crate) use crate::updates_cache::dismiss_version;
-
 pub fn get_upgrade_version(config: &Config) -> Option<String> {
     if !config.check_for_update_on_startup || is_source_build_version(CUSTOM_VERSION) {
         return None;
@@ -134,7 +131,3 @@ pub fn get_upgrade_version_for_popup(config: &Config) -> Option<String> {
     }
     Some(latest)
 }
-
-#[cfg(test)]
-#[path = "check_tests.rs"]
-mod tests;

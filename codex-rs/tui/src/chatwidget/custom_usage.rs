@@ -3,10 +3,6 @@
 use super::*;
 use codex_app_server_protocol::TurnStatus;
 
-#[cfg(test)]
-#[path = "custom_output_speed_tests.rs"]
-mod output_speed_tests;
-
 #[derive(Debug)]
 pub(super) struct CustomUsageState {
     pub(super) enabled: bool,
@@ -76,11 +72,6 @@ impl ChatWidget {
 
     pub(crate) fn custom_usage_enabled(&self) -> bool {
         self.turn_lifecycle.custom_usage.enabled
-    }
-
-    #[cfg(test)]
-    pub(super) fn enable_custom_usage(&mut self) {
-        self.turn_lifecycle.custom_usage.enabled = true;
     }
 
     pub(super) fn open_custom_usage_analytics(

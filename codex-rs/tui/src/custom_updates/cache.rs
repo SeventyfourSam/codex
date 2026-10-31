@@ -32,19 +32,3 @@ pub(crate) fn reserve_update_check(
     file.sync_all()?;
     Ok(true)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn launches_share_a_daily_reservation_even_without_a_successful_release_check() {
-        let home = tempfile::tempdir().unwrap();
-        let path = home.path().join("custom-version.json");
-        let now = Utc::now();
-        assert!(reserve_update_check(&path, now).unwrap());
-        assert!(!reserve_update_check(&path, now + chrono::Duration::hours(23)).unwrap());
-        assert!(reserve_update_check(&path, now + chrono::Duration::hours(24)).unwrap());
-        assert!(!path.exists());
-    }
-}

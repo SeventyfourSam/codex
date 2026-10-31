@@ -1,6 +1,7 @@
 """Regenerate protocol artifacts only after a release's source merge is clean."""
 
 import subprocess
+import sys
 from pathlib import Path
 
 GENERATED_PATHS = (
@@ -53,6 +54,12 @@ def regenerate_schema(upstream: str) -> None:
                     "short",
                 ],
                 cwd="codex-rs",
+                check=True,
+            )
+            # A clean merge and compilation do not prove unchanged behavior.
+            # Run existing upstream tests only when preparing a real upgrade.
+            subprocess.run(
+                [sys.executable, ".github/scripts/run_custom_compat_tests.py"],
                 check=True,
             )
     finally:

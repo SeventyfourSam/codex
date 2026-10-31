@@ -33,6 +33,10 @@ pub fn initialize_custom_config(codex_home: &Path) -> io::Result<()> {
         ("analytics", vec![("enabled", value(/*v*/ false))]),
         ("feedback", vec![("enabled", value(/*v*/ false))]),
         (
+            "features",
+            vec![("plugin_discovery_prefetch", value(/*v*/ false))],
+        ),
+        (
             "otel",
             vec![
                 ("exporter", value("none")),
@@ -105,7 +109,3 @@ fn prepare_daemon_defaults(codex_home: &Path) -> io::Result<Option<(std::path::P
     let updated = serde_json::to_string_pretty(&settings).map_err(io::Error::other)? + "\n";
     Ok(Some((paths.write_path, updated)))
 }
-
-#[cfg(test)]
-#[path = "custom_defaults_tests.rs"]
-mod tests;

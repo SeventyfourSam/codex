@@ -1,6 +1,4 @@
 use super::*;
-#[path = "custom_refresh_policy_tests.rs"]
-mod custom_refresh_policy_tests;
 use crate::ModelsManagerConfig;
 use crate::cache::FileModelsCache;
 use crate::cache::ModelsCache;

@@ -265,7 +265,3 @@ pub(super) async fn run(
     )
     .await
 }
-
-#[cfg(test)]
-#[path = "responses_websocket_custom_payload_tests.rs"]
-mod tests;

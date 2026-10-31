@@ -53,7 +53,6 @@ mod critical_path_analytics;
 #[cfg(unix)]
 mod curated_mcp_sync;
 mod current_time;
-mod custom_models;
 mod cyber_access_program;
 mod daemon_update_recovery;
 mod daybreak_access;

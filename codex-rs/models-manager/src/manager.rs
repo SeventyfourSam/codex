@@ -138,6 +138,15 @@ type SharedModelsEndpointClient = Arc<dyn ModelsEndpointClient>;
 
 /// Coordinates model discovery plus cached metadata on disk.
 pub trait ModelsManager: fmt::Debug + Send + Sync {
+    /// Refresh the custom catalog without extending upstream refresh strategies.
+    fn custom_refresh_models(
+        &self,
+        _purpose: CustomRefreshPurpose,
+        http_client_factory: HttpClientFactory,
+    ) -> ModelsManagerFuture<'_, Vec<ModelPreset>> {
+        self.list_models(RefreshStrategy::Online, http_client_factory)
+    }
+
     /// Select an isolated catalog for a supported thread originator. `None` retains this manager.
     fn for_originator(&self, _originator: &str) -> Option<SharedModelsManager> {
         None
@@ -167,15 +176,6 @@ pub trait ModelsManager: fmt::Debug + Send + Sync {
                 refresh_strategy = %refresh_strategy
             )),
         )
-    }
-
-    /// Refresh the custom catalog without extending upstream refresh strategies.
-    fn custom_refresh_models(
-        &self,
-        _purpose: CustomRefreshPurpose,
-        http_client_factory: HttpClientFactory,
-    ) -> ModelsManagerFuture<'_, Vec<ModelPreset>> {
-        self.list_models(RefreshStrategy::Online, http_client_factory)
     }
 
     /// Project model metadata from the source-aware read, using its refresh and fallback policy.
@@ -448,6 +448,14 @@ impl StaticModelsManager {
 }
 
 impl ModelsManager for OpenAiModelsManager {
+    fn custom_refresh_models(
+        &self,
+        purpose: CustomRefreshPurpose,
+        http_client_factory: HttpClientFactory,
+    ) -> ModelsManagerFuture<'_, Vec<ModelPreset>> {
+        Box::pin(self.custom_refreshed_models(purpose, http_client_factory))
+    }
+
     fn model_catalog_with_origins(
         &self,
         refresh_strategy: RefreshStrategy,
@@ -489,14 +497,6 @@ impl ModelsManager for OpenAiModelsManager {
         let manager: SharedModelsManager = Arc::new(manager);
         managers.insert(originator, Arc::clone(&manager));
         Some(manager)
-    }
-
-    fn custom_refresh_models(
-        &self,
-        purpose: CustomRefreshPurpose,
-        http_client_factory: HttpClientFactory,
-    ) -> ModelsManagerFuture<'_, Vec<ModelPreset>> {
-        Box::pin(self.custom_refreshed_models(purpose, http_client_factory))
     }
 
     fn set_api_key_model_discovery_enabled(&self, enabled: bool) {

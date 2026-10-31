@@ -129,6 +129,9 @@ pub(crate) enum StatusLineItem {
     /// Total output tokens generated.
     TotalOutputTokens,
 
+    /// Average output rate of the last completed model request.
+    TokenOutputSpeed,
+
     /// Estimated credits attributed directly to the current enterprise thread.
     ThreadCredits,
 
@@ -166,15 +169,15 @@ pub(crate) enum StatusLineItem {
     /// Model provider ID for the active thread.
     #[strum(to_string = "provider", serialize = "model-provider")]
     Provider,
-
-    /// Average output rate of the last completed model request.
-    TokenOutputSpeed,
 }
 
 impl StatusLineItem {
     /// User-visible description shown in the popup.
     pub(crate) fn description(self) -> &'static str {
         match self {
+            StatusLineItem::TokenOutputSpeed => {
+                "Last local model request: output tokens / request time (no daemon/remote)"
+            }
             StatusLineItem::ModelName => "Current model name",
             StatusLineItem::ModelWithReasoning => "Current model name with reasoning level",
             StatusLineItem::Reasoning => "Current reasoning level",
@@ -234,14 +237,12 @@ impl StatusLineItem {
             StatusLineItem::TaskProgress => {
                 "Latest task progress from update_plan (omitted until available)"
             }
-            StatusLineItem::TokenOutputSpeed => {
-                "Last local model request: output tokens / request time (no daemon/remote)"
-            }
         }
     }
 
     pub(crate) fn preview_item(self) -> StatusSurfacePreviewItem {
         match self {
+            StatusLineItem::TokenOutputSpeed => StatusSurfacePreviewItem::TokenOutputSpeed,
             StatusLineItem::ModelName => StatusSurfacePreviewItem::Model,
             StatusLineItem::ModelWithReasoning => StatusSurfacePreviewItem::ModelWithReasoning,
             StatusLineItem::Reasoning => StatusSurfacePreviewItem::Reasoning,
@@ -275,7 +276,6 @@ impl StatusLineItem {
             StatusLineItem::ThreadTitle => StatusSurfacePreviewItem::ThreadTitle,
             StatusLineItem::WorkspaceHeadline => StatusSurfacePreviewItem::WorkspaceHeadline,
             StatusLineItem::TaskProgress => StatusSurfacePreviewItem::TaskProgress,
-            StatusLineItem::TokenOutputSpeed => StatusSurfacePreviewItem::TokenOutputSpeed,
         }
     }
 }

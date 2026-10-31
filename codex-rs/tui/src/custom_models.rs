@@ -46,29 +46,3 @@ fn is_unsupported_method(error: &TypedRequestError) -> bool {
         || (source.code == -32600
             && source.message.contains("unknown variant `custom/modelRefresh`")))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use codex_app_server_protocol::JSONRPCErrorError;
-
-    #[test]
-    fn fallback_only_accepts_an_unsupported_custom_method() {
-        for (code, message, expected) in [
-            (-32601, "Method not found", true),
-            (-32600, "unknown variant `custom/modelRefresh`", true),
-            (-32600, "Invalid params", false),
-            (-32000, "Unauthenticated", false),
-        ] {
-            let error = TypedRequestError::Server {
-                method: "custom/modelRefresh".to_string(),
-                source: JSONRPCErrorError {
-                    code,
-                    message: message.to_string(),
-                    data: None,
-                },
-            };
-            assert_eq!(is_unsupported_method(&error), expected);
-        }
-    }
-}

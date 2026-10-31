@@ -8,6 +8,7 @@ use super::status_line_setup::StatusLineItem;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum StatusSurfacePreviewItem {
+    TokenOutputSpeed,
     AppName,
     ProjectName,
     ProjectRoot,
@@ -43,12 +44,12 @@ pub(crate) enum StatusSurfacePreviewItem {
     Profile,
     Provider,
     TaskProgress,
-    TokenOutputSpeed,
 }
 
 impl StatusSurfacePreviewItem {
     fn placeholder(self) -> &'static str {
         match self {
+            StatusSurfacePreviewItem::TokenOutputSpeed => "42.0 tk/s",
             StatusSurfacePreviewItem::AppName => "codex",
             StatusSurfacePreviewItem::ProjectName => "my-project",
             StatusSurfacePreviewItem::ProjectRoot => "my-project",
@@ -84,12 +85,12 @@ impl StatusSurfacePreviewItem {
             StatusSurfacePreviewItem::Profile => "profile: <name>",
             StatusSurfacePreviewItem::Provider => "provider: <id>",
             StatusSurfacePreviewItem::TaskProgress => "Tasks 0/0",
-            StatusSurfacePreviewItem::TokenOutputSpeed => "42.0 tk/s",
         }
     }
 
     pub(crate) fn iter() -> impl Iterator<Item = Self> {
         [
+            Self::TokenOutputSpeed,
             Self::AppName,
             Self::ProjectName,
             Self::ProjectRoot,
@@ -125,7 +126,6 @@ impl StatusSurfacePreviewItem {
             Self::Profile,
             Self::Provider,
             Self::TaskProgress,
-            Self::TokenOutputSpeed,
         ]
         .into_iter()
     }

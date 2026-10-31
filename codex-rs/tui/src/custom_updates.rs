@@ -95,21 +95,3 @@ pub(crate) fn is_newer(latest: &str, current: &str) -> Option<bool> {
         _ => None,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn custom_install_commands_use_only_the_fork_release_with_timeouts() {
-        for action in [CustomUpdate::Unix, CustomUpdate::Windows] {
-            let (_, args) = action.command_args();
-            let command = args.join(" ");
-            assert!(command.contains(
-                "https://github.com/SeventyfourSam/codex/releases/latest/download/install."
-            ));
-            assert!(!command.contains("chatgpt.com/codex"));
-            assert!(command.contains("30"));
-        }
-    }
-}

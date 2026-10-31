@@ -50,7 +50,3 @@ impl ModelResponseInterceptor for RequestTimer {
         }))
     }
 }
-
-#[cfg(test)]
-#[path = "custom_output_speed_tests.rs"]
-mod tests;

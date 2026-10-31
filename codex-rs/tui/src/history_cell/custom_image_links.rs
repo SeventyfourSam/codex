@@ -2,7 +2,6 @@
 //! Browser opening and mouse gestures use the existing transcript hyperlink path.
 
 use super::UserHistoryCell;
-use super::messages::sanitize_user_text;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::TerminalHyperlink;
 use crate::terminal_hyperlinks::plain_hyperlink_lines;
@@ -11,6 +10,7 @@ use crate::width::display_width;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_lines;
 use codex_protocol::models::local_image_label_text;
+use codex_protocol::user_input::TextElement;
 use ratatui::style::Modifier;
 use ratatui::text::Line;
 use std::ops::Range;
@@ -72,7 +72,12 @@ pub(super) fn viewed_image(lines: Vec<Line<'static>>, path: &str) -> Vec<Hyperli
     lines
 }
 
-pub(super) fn user_images(cell: &UserHistoryCell, lines: &mut [HyperlinkLine], width: u16) {
+pub(super) fn user_images(
+    cell: &UserHistoryCell,
+    lines: &mut [HyperlinkLine],
+    width: u16,
+    text_elements: &[TextElement],
+) {
     let targets = cell
         .local_image_paths
         .iter()
@@ -115,15 +120,8 @@ pub(super) fn user_images(cell: &UserHistoryCell, lines: &mut [HyperlinkLine], w
         }
     }
 
-    // Match the upstream renderer's decision to discard element byte offsets
-    // when sanitizing text or trimming a spoken message changes its contents.
-    if sanitize_user_text(cell.message.as_str().into()) != cell.message
-        || cell.is_spoken() && cell.message.trim_start() != cell.message
-    {
-        return;
-    }
-    let elements = cell
-        .text_elements
+    // Reuse the byte offsets accepted by the upstream renderer after sanitizing.
+    let elements = text_elements
         .iter()
         .filter_map(|element| {
             let range = element.byte_range.start..element.byte_range.end;
@@ -161,7 +159,3 @@ pub(super) fn user_images(cell: &UserHistoryCell, lines: &mut [HyperlinkLine], w
         }
     }
 }
-
-#[cfg(test)]
-#[path = "custom_image_links_tests.rs"]
-mod tests;

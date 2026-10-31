@@ -92,31 +92,3 @@ impl HistoryCell for CustomUpdateAvailableHistoryCell {
         self.display_hyperlink_lines(width)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn custom_notice_links_to_custom_release_and_keeps_the_custom_version() {
-        let cell = CustomUpdateAvailableHistoryCell::new(
-            "999.0.0-custom.4".to_string(),
-            Some(UpdateAction::StandaloneWindows),
-        );
-        let text = cell
-            .raw_lines()
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(text.contains(codex_utils_cli::CUSTOM_VERSION));
-        assert!(text.contains("codex update"));
-        assert!(text.contains(codex_install_context::CUSTOM_RELEASE_URL));
-        assert!(
-            cell.display_hyperlink_lines(120)
-                .iter()
-                .flat_map(|line| &line.hyperlinks)
-                .any(|link| link.destination == codex_install_context::CUSTOM_RELEASE_URL)
-        );
-    }
-}

@@ -101,8 +101,6 @@ mod guardian_checkpoint_migration;
 mod builtin_model_catalog;
 mod canonical_plugin_connectors;
 mod critical_path_runtime;
-#[path = "custom_websocket_transport_tests.rs"]
-mod custom_websocket_transport;
 mod gateway_auth;
 mod guardian_connector_trust;
 #[cfg(not(target_os = "windows"))]

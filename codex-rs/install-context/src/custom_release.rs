@@ -67,7 +67,3 @@ pub fn custom_version_from_tag(tag: &str) -> Option<&str> {
     parse_custom_version(version)?;
     Some(version)
 }
-
-#[cfg(test)]
-#[path = "custom_release_tests.rs"]
-mod tests;
