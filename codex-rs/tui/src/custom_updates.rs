@@ -30,7 +30,7 @@ impl CustomUpdate {
                 "sh",
                 &[
                     "-c",
-                    "set -e; script=$(mktemp); trap 'rm -f \"$script\"' EXIT; curl -fsSL --connect-timeout 10 --max-time 30 https://github.com/SeventyfourSam/codex/releases/latest/download/install.sh -o \"$script\"; sh \"$script\"",
+                    "set -e; export CODEX_RELEASE=latest; script=$(mktemp); trap 'rm -f \"$script\"' EXIT; curl -fsSL --connect-timeout 10 --max-time 30 https://github.com/SeventyfourSam/codex/releases/latest/download/install.sh -o \"$script\"; sh \"$script\"",
                 ],
             ),
             Self::Windows => (
@@ -40,7 +40,7 @@ impl CustomUpdate {
                     "-ExecutionPolicy",
                     "Bypass",
                     "-c",
-                    "$ErrorActionPreference = 'Stop'; irm -TimeoutSec 30 https://github.com/SeventyfourSam/codex/releases/latest/download/install.ps1 | iex",
+                    "$ErrorActionPreference = 'Stop'; $env:CODEX_RELEASE = 'latest'; irm -TimeoutSec 30 https://github.com/SeventyfourSam/codex/releases/latest/download/install.ps1 | iex",
                 ],
             ),
         }

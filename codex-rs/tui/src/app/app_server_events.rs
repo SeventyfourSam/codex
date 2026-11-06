@@ -450,7 +450,7 @@ impl App {
                 let cwd = self.chat_widget.config_ref().cwd.to_path_buf();
                 self.chat_widget.refresh_plugin_mentions();
                 self.chat_widget.submit_op(AppCommand::reload_user_config());
-                super::plugin_mentions::custom::refresh_visible_catalog(self, app_server_client, cwd);
+                super::plugin_mentions_custom::refresh(self, app_server_client, cwd);
                 if should_report_completion {
                     self.chat_widget.add_plain_history_lines(
                         crate::external_agent_config_migration::flow::external_agent_config_migration_finished_lines(notification),
@@ -630,9 +630,10 @@ impl App {
             return;
         }
         if let ServerRequest::DynamicToolCall { request_id, params } = &request {
+            let tui_tool = params.namespace.as_deref() == Some(crate::dynamic_tools::NAMESPACE);
+            // Another client may own this request on a shared server.
             if self.dynamic_tool_tasks.contains_key(request_id)
-                || (params.namespace.as_deref() != Some(crate::dynamic_tools::NAMESPACE)
-                    && !app_server_client.uses_embedded_app_server())
+                || (!tui_tool && !app_server_client.uses_embedded_app_server())
             {
                 return;
             }
@@ -643,7 +644,7 @@ impl App {
                     app_server_client.thread_tool_transport(),
                     crate::dynamic_tools_mcp::ThreadToolTransport::Mcp(_)
                 );
-            if app_server_client.uses_embedded_app_server()
+            if !tui_tool
                 || requires_mcp
                 || codex_protocol::ThreadId::from_string(&params.thread_id)
                     .is_ok_and(|thread_id| self.abandoned_side_threads.contains(&thread_id))
@@ -651,7 +652,7 @@ impl App {
                 let response = crate::dynamic_tools::failure_response(if requires_mcp {
                     "TUI task tools require the approval-gated MCP server"
                 } else {
-                    "TUI dynamic tools require an active external task"
+                    "TUI dynamic tools require an active task in the TUI namespace"
                 });
                 self.app_event_tx.send(AppEvent::DynamicToolCallCompleted {
                     request_id: request_id.clone(),

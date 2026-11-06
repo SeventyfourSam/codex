@@ -205,13 +205,9 @@ pub(super) async fn run(
         // Do not expose internal response IDs or repeated input-token usage to the turn.
         // Drain concurrently to retain upstream metadata, error, timeout and cancellation handling.
         let collect = async {
-            let mut response_id = None;
             while let Some(event) = rx_batch.recv().await {
                 match event? {
-                    ResponseEvent::Created { .. } => {}
-                    ResponseEvent::Completed {
-                        response_id: id, ..
-                    } => response_id = Some(id),
+                    ResponseEvent::Created { .. } | ResponseEvent::Completed { .. } => {}
                     ResponseEvent::OutputItemAdded(_)
                     | ResponseEvent::OutputItemDone(_)
                     | ResponseEvent::OutputTextDelta(_)
@@ -228,14 +224,19 @@ pub(super) async fn run(
                         .map_err(|_| ApiError::Stream("response event consumer dropped".into()))?,
                 }
             }
-            Ok(response_id)
+            Ok(())
         };
-        let (_, response_id) = tokio::try_join!(replay, collect)?;
+        tokio::try_join!(replay, collect)?;
         if interrupt.clone().now_or_never().is_some() {
             return Err(ApiError::Stream(
                 "WebSocket history replay interrupted".into(),
             ));
         }
+        // Upstream returns completion separately, after draining the socket.
+        let response_id = match batch_completion {
+            Some(ResponseEvent::Completed { response_id, .. }) => Some(response_id),
+            _ => None,
+        };
         let response_id = response_id.filter(|id| !id.is_empty()).ok_or_else(|| {
             ApiError::Stream("WebSocket history preloading ended without response.completed".into())
         })?;

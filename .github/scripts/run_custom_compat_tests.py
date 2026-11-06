@@ -26,8 +26,13 @@ UPGRADE_CHECKS = [
         "-E",
         "package(codex-api) | package(codex-models-manager) | "
         "(package(codex-core-plugins) & test(catalog)) | "
-        "(package(codex-tui) & (test(cloud_bootstrap) | "
+        "(package(codex-tui) & (test(app_server_session::tests) | "
+        "test(plugin_mentions) | test(view_image) | test(viewed_image) | "
         "test(history_cell::tests::user_) | test(status_line_setup)))",
+    ],
+    [
+        "-p", "codex-cli", "--bin", "codex",
+        "-E", "test(update_) | test(updater_) | test(windows_update_command_resolution)",
     ],
     [
         "-p", "codex-app-server", "--test", "all",

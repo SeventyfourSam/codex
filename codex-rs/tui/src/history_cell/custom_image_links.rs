@@ -4,14 +4,12 @@
 use super::UserHistoryCell;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::TerminalHyperlink;
-use crate::terminal_hyperlinks::plain_hyperlink_lines;
 use crate::ui_consts::LIVE_PREFIX_COLS;
 use crate::width::display_width;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_lines;
 use codex_protocol::models::local_image_label_text;
 use codex_protocol::user_input::TextElement;
-use ratatui::style::Modifier;
 use ratatui::text::Line;
 use std::ops::Range;
 use std::path::Path;
@@ -35,41 +33,6 @@ fn link(line: &mut HyperlinkLine, columns: Range<usize>, url: &Url) {
     let mut link = TerminalHyperlink::web(columns, url.to_string());
     link.retarget_to_trusted_file(url);
     line.hyperlinks.push(link);
-}
-
-pub(super) fn viewed_image(lines: Vec<Line<'static>>, path: &str) -> Vec<HyperlinkLine> {
-    let mut lines = plain_hyperlink_lines(lines);
-    let path = if path.starts_with("file://") {
-        Url::parse(path)
-            .ok()
-            .and_then(|url| url.to_file_path().ok())
-    } else {
-        Some(Path::new(path).to_path_buf())
-    };
-    let Some(url) = path.as_deref().and_then(image_url) else {
-        return lines;
-    };
-    for line in &mut lines {
-        // Upstream dims the path and gutter, but makes the heading bold. Preserve
-        // its truncation/wrapping, excluding the two-column gutter from the link.
-        let mut column = 0;
-        let ranges = line
-            .line
-            .spans
-            .iter()
-            .filter_map(|span| {
-                let start = column;
-                column += display_width(&span.content);
-                (span.style.add_modifier.contains(Modifier::DIM)
-                    && !span.style.add_modifier.contains(Modifier::BOLD))
-                .then_some(start.max(/*other*/ 2)..column)
-            })
-            .collect::<Vec<_>>();
-        for range in ranges {
-            link(line, range, &url);
-        }
-    }
-    lines
 }
 
 pub(super) fn user_images(
