@@ -9,13 +9,16 @@ $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 }
 if ($env:OS -ne 'Windows_NT' -or $architecture -ne 'AMD64') { throw "Only Windows x64 is supported (OS: $env:OS; architecture: $architecture)." }
 if ([string]::IsNullOrEmpty($Release)) { $Release = 'latest' }
 if ($Release -eq 'latest') {
-    $response = Invoke-WebRequest -UseBasicParsing -Method Head -Uri "$repo/releases/latest" -TimeoutSec 30
+    $latestUrl = "$repo/releases/latest?codex_update=$([Guid]::NewGuid().ToString('N'))"
+    $response = Invoke-WebRequest -UseBasicParsing -Method Head -Uri $latestUrl -Headers @{ 'Cache-Control' = 'no-cache'; Pragma = 'no-cache' } -TimeoutSec 30
     $uri = if ($response.BaseResponse.ResponseUri) { $response.BaseResponse.ResponseUri } else { $response.BaseResponse.RequestMessage.RequestUri }
+    $resolved = $uri.GetLeftPart([System.UriPartial]::Path)
     $prefix = "$repo/releases/tag/v"
-    if (-not $uri.AbsoluteUri.StartsWith($prefix, [StringComparison]::Ordinal)) { throw 'Invalid latest release redirect.' }
-    $version = $uri.AbsoluteUri.Substring($prefix.Length)
+    if (-not $resolved.StartsWith($prefix, [StringComparison]::Ordinal)) { throw 'Invalid latest release redirect.' }
+    $version = $resolved.Substring($prefix.Length)
 } else { $version = $Release -creplace '^v', '' }
-if ($version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-custom(\.(0|[1-9][0-9]*))?$') { throw 'Expected x.y.z-custom or x.y.z-custom.N.' }
+$customVersionPattern = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-custom(\.(0|[1-9][0-9]*))?$'
+if ($version -cnotmatch $customVersionPattern) { throw 'Expected x.y.z-custom or x.y.z-custom.N.' }
 $base = $version -replace '-custom(?:\..*)?$', ''
 $name = "$version-x86_64-pc-windows-msvc"
 $asset = "codex-$name.zip"
@@ -66,6 +69,20 @@ try {
         $expected = Join-Path $root "releases\$env:CODEX_UPDATE_FROM_RELEASE"
         if (-not $env:CODEX_UPDATE_FROM_RELEASE -or $selected.LinkType -ne 'Junction' -or $selected.Target -ne $expected) { throw 'Daemon selection changed; retry.' }
         if ($env:CODEX_INSTALL_IF_LATEST -eq '1' -and (Get-Content (Join-Path $root 'auto-update-version') -Raw) -cne $env:CODEX_UPDATE_FROM_RELEASE) { return }
+    }
+    if ($Release -eq 'latest') {
+        $selection = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+        if ($selection -and $selection.LinkType -eq 'Junction') {
+            $installedVersion = (Split-Path -Path ([string](@($selection.Target)[0])) -Leaf) -creplace '-x86_64-pc-windows-msvc$', ''
+            if ($installedVersion -cmatch $customVersionPattern) {
+                $requestedParts = ($version -creplace '-custom$', '.0' -creplace '-custom\.', '.') -split '\.'
+                $installedParts = ($installedVersion -creplace '-custom$', '.0' -creplace '-custom\.', '.') -split '\.'
+                for ($i = 0; $i -lt 4; $i++) {
+                    if ([UInt64]$requestedParts[$i] -lt [UInt64]$installedParts[$i]) { throw "Refusing to downgrade latest from $installedVersion to $version." }
+                    if ([UInt64]$requestedParts[$i] -gt [UInt64]$installedParts[$i]) { break }
+                }
+            }
+        }
     }
     $destination = Join-Path $root "releases\$name"
     if (-not (Test-Package $destination)) {

@@ -13,10 +13,12 @@ if [ "$arch" = x86_64 ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || 
 for command in curl tar shasum; do command -v "$command" >/dev/null; done
 fetch() { curl -fsSL --connect-timeout 10 --max-time 300 "$1" -o "$2"; }
 if [ "$release" = latest ]; then
-  url=$(curl -fsSL --connect-timeout 10 --max-time 30 -I -o /dev/null -w '%{url_effective}' "$repo/releases/latest")
+  url=$(curl -fsSL --connect-timeout 10 --max-time 30 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' -I -o /dev/null -w '%{url_effective}' "$repo/releases/latest?codex_update=$(date +%s)-$$")
+  url=${url%%\?*}
   case "$url" in "$repo/releases/tag/v"*) version=${url#"$repo/releases/tag/v"};; *) echo 'Invalid latest release redirect.' >&2; exit 1;; esac
 else version=${release#v}; fi
-printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-custom(\.(0|[1-9][0-9]*))?$' || { echo 'Expected x.y.z-custom or x.y.z-custom.N.' >&2; exit 1; }
+custom_version_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-custom(\.(0|[1-9][0-9]*))?$'
+printf '%s\n' "$version" | grep -Eq "$custom_version_pattern" || { echo 'Expected x.y.z-custom or x.y.z-custom.N.' >&2; exit 1; }
 base=${version%-custom*}
 target=aarch64-apple-darwin
 name=$version-$target
@@ -68,6 +70,28 @@ if [ "${CODEX_INSTALL_IF_LATEST:-0}" = 1 ] || [ "${CODEX_INSTALL_IF_CURRENT:-0}"
   [ -n "${CODEX_UPDATE_FROM_RELEASE:-}" ] && [ "$selected" = "$releases/$CODEX_UPDATE_FROM_RELEASE" ] || exit 1
   if [ "${CODEX_INSTALL_IF_LATEST:-0}" = 1 ]; then
     [ "$(cat "$root/auto-update-version" 2>/dev/null || true)" = "$CODEX_UPDATE_FROM_RELEASE" ] || exit 0
+  fi
+fi
+if [ "$release" = latest ] && [ -L "$current" ]; then
+  installed_path=$(cd "$current" 2>/dev/null && pwd -P) || installed_path=
+  installed=${installed_path##*/}
+  installed=${installed%-aarch64-apple-darwin}
+  if printf '%s\n' "$installed" | grep -Eq "$custom_version_pattern"; then
+    if ! awk -v requested="$version" -v installed="$installed" '
+      BEGIN {
+        gsub(/-custom\.?/, ".", requested); gsub(/-custom\.?/, ".", installed);
+        split(requested, want, "[.]"); split(installed, have, "[.]");
+        if (want[4] == "") want[4] = "0";
+        if (have[4] == "") have[4] = "0";
+        for (i = 1; i <= 4; i++) {
+          if (length(want[i]) != length(have[i])) exit (length(want[i]) < length(have[i]));
+          if (("v" want[i]) != ("v" have[i])) exit (("v" want[i]) < ("v" have[i]));
+        }
+        exit 0;
+      }'; then
+      echo "Refusing to downgrade latest from $installed to $version." >&2
+      exit 1
+    fi
   fi
 fi
 package_complete() {
