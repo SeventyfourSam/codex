@@ -1,5 +1,5 @@
 name: Custom release
-run-name: Custom release - ${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) || 'check upstream' }}
+run-name: Custom release - ${{ inputs.retry_run_id && format('resume run {0}', inputs.retry_run_id) || inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) || 'check upstream' }}
 
 # Push vX.Y.Z-custom or vX.Y.Z-custom.N to build and publish a release.
 on:
@@ -12,6 +12,14 @@ on:
         description: "Existing tag to rebuild; leave empty to check official stable updates"
         required: false
         type: string
+      retry_run_id:
+        description: "Internal: resume a run after hosted-runner allocation failed"
+        required: false
+        type: string
+      retry_attempt:
+        description: "Internal: original run attempt, used to ignore stale retry requests"
+        required: false
+        type: string
   push:
     tags:
       - "v*-custom"
@@ -22,7 +30,7 @@ permissions:
 
 concurrency:
   # A tag's short dispatch run must not hold the actual build's concurrency slot.
-  group: custom-release-${{ github.event_name == 'push' && format('dispatch-{0}', github.ref_name) || inputs.release_tag || 'sync' }}
+  group: custom-release-${{ inputs.retry_run_id && format('retry-{0}', inputs.retry_run_id) || (github.event_name == 'push' && format('dispatch-{0}', github.ref_name)) || inputs.release_tag || 'sync' }}
   cancel-in-progress: false
 
 jobs:
@@ -60,7 +68,7 @@ jobs:
           echo "Dispatched $RELEASE_TAG to custom; follow the workflow_dispatch run for build results." >> "$GITHUB_STEP_SUMMARY"
 
   prepare:
-    if: github.repository == 'SeventyfourSam/codex' && github.ref == 'refs/heads/custom' && github.event_name != 'push'
+    if: github.repository == 'SeventyfourSam/codex' && github.ref == 'refs/heads/custom' && github.event_name != 'push' && inputs.retry_run_id == ''
     runs-on: ubuntu-24.04
     # Cold upgrades also compile upstream compatibility tests; unchanged releases skip them.
     timeout-minutes: 120
@@ -399,3 +407,28 @@ jobs:
               --notes "Custom CLI packages for macOS arm64 and Windows x64. Extract the complete archive and run the executable under bin/. Developer ID signing and notarization are not included." \
               ./*.tar.gz ./*.zip install.sh install.ps1 SHA256SUMS
           fi
+
+  requeue:
+    name: Requeue unavailable runners
+    needs: [prepare, build, publish]
+    if: >-
+      always() && github.repository == 'SeventyfourSam/codex' &&
+      github.ref == 'refs/heads/custom' && github.event_name != 'push' &&
+      (inputs.retry_run_id != '' || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      checks: read
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: custom
+          persist-credentials: false
+      - name: Resume only jobs that could not acquire a hosted runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RETRY_RUN_ID: ${{ inputs.retry_run_id }}
+          RETRY_ATTEMPT: ${{ inputs.retry_attempt }}
+        run: python3 .github/scripts/requeue_custom_release.py
