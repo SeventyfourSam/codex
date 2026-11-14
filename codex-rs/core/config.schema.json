@@ -8679,6 +8679,12 @@
       ],
       "description": "Controls the web search tool mode: disabled, cached, indexed, or live."
     },
+    "web_server_port": {
+      "description": "Local Sparkle WebSocket port for app-server connections.",
+      "format": "uint16",
+      "minimum": 1.0,
+      "type": "integer"
+    },
     "windows": {
       "allOf": [
         {

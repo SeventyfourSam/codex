@@ -115,6 +115,7 @@ mod connection_cleanup;
 mod connection_rpc_gate;
 mod current_time;
 mod custom_output_speed;
+mod custom_sparkle;
 mod daemon_thread_recovery;
 mod dynamic_tools;
 mod effective_plugin_change;
@@ -925,6 +926,16 @@ pub async fn run_main_with_transport_options(
         }
     }
     transport_accept_handles.push(remote_control_accept_handle);
+    transport_accept_handles.push(codex_app_server_transport::start_sparkle_connection(
+        &config,
+        if managed_daemon {
+            "shared"
+        } else {
+            "standalone"
+        },
+        transport_event_tx.clone(),
+        transport_shutdown_token.clone(),
+    ));
 
     // Only the standalone server measures its local home, not embedded/cloud runtimes.
     if let Some(metrics) = otel.as_ref().and_then(codex_otel::OtelProvider::metrics) {

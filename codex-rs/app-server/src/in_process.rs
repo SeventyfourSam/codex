@@ -66,6 +66,7 @@ use crate::outgoing_message::QueuedOutgoingMessage;
 use crate::plugin_config_reload::PluginStartupConfig;
 use crate::transport::CHANNEL_CAPACITY;
 use crate::transport::OutboundConnectionState;
+#[cfg(test)]
 use crate::transport::route_outgoing_envelope;
 pub use bootstrap::EmbeddedNetworkPolicy;
 use codex_analytics::AppServerRpcTransport;
@@ -413,6 +414,7 @@ pub async fn start(mut args: InProcessStartArgs) -> IoResult<InProcessClientHand
     Ok(client)
 }
 
+#[cfg(test)]
 async fn run_outbound_router(
     mut outgoing_rx: mpsc::Receiver<OutgoingEnvelope>,
     mut outbound_connections: HashMap<ConnectionId, OutboundConnectionState>,
@@ -462,6 +464,15 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
         let analytics_events_client =
             analytics_events_client_from_config(Arc::clone(&auth_manager), args.config.as_ref());
         let analytics_events_flush_client = analytics_events_client.clone();
+        let sparkle_outgoing_tx = outgoing_tx.clone();
+        let (sparkle_events_tx, mut sparkle_events_rx) = mpsc::channel(channel_capacity);
+        let sparkle_shutdown = tokio_util::sync::CancellationToken::new();
+        let sparkle_handle = codex_app_server_transport::start_sparkle_connection(
+            args.config.as_ref(),
+            "embedded",
+            sparkle_events_tx,
+            sparkle_shutdown.clone(),
+        );
         // A client can be waiting for process/kill while nobody is polling next_event.
         let (process_reply_tx, mut process_reply_rx) = mpsc::channel(channel_capacity);
         let outgoing_message_sender = Arc::new(
@@ -497,10 +508,13 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
                 /*disconnect_sender*/ None,
             ),
         );
+        let (sparkle_control_tx, sparkle_control_rx) = mpsc::channel(channel_capacity);
+        let processor_sparkle_control = sparkle_control_tx.clone();
         let (outbound_shutdown_tx, outbound_shutdown_rx) = oneshot::channel();
-        let mut outbound_handle = tokio::spawn(run_outbound_router(
+        let mut outbound_handle = tokio::spawn(crate::custom_sparkle::run_outbound_router(
             outgoing_rx,
             outbound_connections,
+            sparkle_control_rx,
             outbound_shutdown_rx,
         ));
 
@@ -537,6 +551,8 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
             let session = Arc::new(ConnectionSessionState::new(
                 crate::transport::ConnectionOrigin::InProcess,
             ));
+            let mut sparkle_connections = HashMap::new();
+            let mut sparkle_cleanup = crate::connection_cleanup::ConnectionCleanupTasks::new();
             let mut listen_for_threads = true;
 
             loop {
@@ -586,6 +602,16 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
                     Some(message) = startup_warnings_rx.recv(), if session.initialized() => {
                         crate::startup_warnings::send_warning(&processor_outgoing, message).await;
                     }
+                    Some(event) = sparkle_events_rx.recv() => {
+                        crate::custom_sparkle::handle_event(
+                            event,
+                            &processor,
+                            &mut sparkle_connections,
+                            &processor_sparkle_control,
+                            &mut sparkle_cleanup,
+                        ).await;
+                    }
+                    _ = sparkle_cleanup.reap_next() => {}
                     created = thread_created_rx.recv(), if listen_for_threads => {
                         match created {
                             Ok(thread_id) => {
@@ -609,6 +635,13 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
                 }
             }
 
+            crate::custom_sparkle::close_connections(
+                &processor,
+                &mut sparkle_connections,
+                &processor_sparkle_control,
+                &mut sparkle_cleanup,
+            )
+            .await;
             processor.clear_runtime_references();
             processor.cancel_active_login().await;
             processor
@@ -708,19 +741,24 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
                 }
                 queued_message = async {
                     tokio::select! {
-                        reply = process_reply_rx.recv() => match reply {
-                            Some(OutgoingEnvelope::ToConnection { message, write_complete_tx, .. }) => {
-                                Some(QueuedOutgoingMessage { message, write_complete_tx })
-                            }
-                            Some(OutgoingEnvelope::Broadcast { .. }) => unreachable!("replies are connection scoped"),
-                            None => None,
-                        },
+                        reply = process_reply_rx.recv() => reply.map(|reply| {
+                            crate::custom_sparkle::classify_reply(reply, IN_PROCESS_CONNECTION_ID)
+                        }),
                         // Leave ordinary replies and events queued until the pending event fits.
-                        event = writer_rx.recv(), if pending_event.is_none() => event,
+                        event = writer_rx.recv(), if pending_event.is_none() => event.map(crate::custom_sparkle::IncomingReply::Embedded),
                     }
                 } => {
                     let Some(queued_message) = queued_message else {
                         break;
+                    };
+                    let queued_message = match queued_message {
+                        crate::custom_sparkle::IncomingReply::Embedded(message) => message,
+                        crate::custom_sparkle::IncomingReply::External(message) => {
+                            if sparkle_outgoing_tx.send(message).await.is_err() {
+                                break;
+                            }
+                            continue;
+                        }
                     };
                     let outgoing_message = queued_message.message;
                     match outgoing_message {
@@ -813,6 +851,7 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
         }
 
         drop(pending_event);
+        sparkle_shutdown.cancel();
         drop(writer_rx);
         drop(process_reply_rx);
         drop(processor_tx);
@@ -839,6 +878,7 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
             outbound_handle.abort();
             let _ = outbound_handle.await;
         }
+        let _ = sparkle_handle.await;
 
         analytics_events_flush_client.flush().await;
 

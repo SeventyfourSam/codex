@@ -23,6 +23,7 @@ use tracing::warn;
 /// plenty for an interactive CLI.
 pub const CHANNEL_CAPACITY: usize = 128;
 
+mod custom_sparkle;
 mod remote_control;
 mod stdio;
 mod unix_socket;
@@ -30,6 +31,7 @@ mod unix_socket;
 mod unix_socket_tests;
 mod websocket;
 
+pub use custom_sparkle::start_sparkle_connection;
 pub use remote_control::REMOTE_CONTROL_DISABLED_ENV_VAR;
 pub use remote_control::RemoteControlDisabledByRequirements;
 pub use remote_control::RemoteControlEnableError;
