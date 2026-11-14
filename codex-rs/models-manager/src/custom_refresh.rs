@@ -12,17 +12,56 @@ pub enum CustomRefreshPurpose {
     Manual,
 }
 
+impl ModelCatalogSettings {
+    pub(super) fn with_custom_refresh_path(mut self, codex_home: PathBuf) -> Self {
+        self.custom_refresh_path = Some(codex_home.join("models_refresh.json"));
+        self
+    }
+}
+
 impl OpenAiModelsManager {
     /// Opt a production provider into bounded downloads without changing default managers.
     pub fn with_custom_refresh_policy(mut self) -> Self {
         self.refresh_policy.enabled = true;
         if let Some(path) = &self.refresh_policy.path {
-            self.cache = Some(Arc::new(FileModelsCache::new(
+            self.settings.cache = Some(Arc::new(FileModelsCache::new(
                 path.with_file_name(MODEL_CACHE_FILE),
                 CUSTOM_CACHE_TTL,
             )));
         }
         self
+    }
+
+    pub(super) fn custom_originator_refresh_strategy(&self) -> RefreshStrategy {
+        if self.refresh_policy.enabled {
+            RefreshStrategy::OnlineIfUncached
+        } else {
+            RefreshStrategy::Online
+        }
+    }
+
+    pub(super) async fn custom_automatic_refresh(
+        &self,
+        mode: CatalogLoadMode,
+        http_client_factory: &HttpClientFactory,
+    ) -> Option<CoreResult<()>> {
+        if !self.refresh_policy.enabled
+            || !matches!(
+                mode,
+                CatalogLoadMode::Initialize
+                    | CatalogLoadMode::Refresh(RefreshStrategy::OnlineIfUncached)
+            )
+        {
+            return None;
+        }
+        Some(
+            self.refresh_custom_cached_models(
+                CustomRefreshPurpose::Automatic,
+                http_client_factory,
+                mode,
+            )
+            .await,
+        )
     }
 
     pub(super) fn custom_auth_refresh_strategy(&self) -> RefreshStrategy {
@@ -42,7 +81,11 @@ impl OpenAiModelsManager {
             let _refresh_guard = self.catalog_source.refresh_lock().await;
             if !self.api_key_discovery_disabled() && self.should_refresh_models().await {
                 if let Err(error) = self
-                    .refresh_custom_cached_models(purpose, &http_client_factory)
+                    .refresh_custom_cached_models(
+                        purpose,
+                        &http_client_factory,
+                        CatalogLoadMode::Refresh(RefreshStrategy::Online),
+                    )
                     .await
                 {
                     error!("failed to refresh custom model catalog: {error}");
@@ -61,9 +104,10 @@ impl OpenAiModelsManager {
         &self,
         purpose: CustomRefreshPurpose,
         http_client_factory: &HttpClientFactory,
+        mode: CatalogLoadMode,
     ) -> CoreResult<()> {
         let mut state = self.refresh_policy.state.lock().await;
-        let cached = self.try_load_cache().await;
+        let cached = self.try_load_cache(mode).await;
         let identity = self.endpoint_client.identity().unwrap_or_default();
         let first_startup = state.initialized.insert(identity.clone());
         if purpose == CustomRefreshPurpose::Automatic && !first_startup {
@@ -84,10 +128,11 @@ impl OpenAiModelsManager {
             .reserve(&mut state, identity, fetched_at, interval)
             .await?
         {
-            self.fetch_and_update_models(http_client_factory).await
+            self.fetch_and_update_models(http_client_factory, mode)
+                .await
         } else {
             // Another terminal may have just populated the shared cache.
-            self.try_load_cache().await;
+            self.try_load_cache(mode).await;
             Ok(())
         }
     }

@@ -33,10 +33,6 @@ pub fn initialize_custom_config(codex_home: &Path) -> io::Result<()> {
         ("analytics", vec![("enabled", value(/*v*/ false))]),
         ("feedback", vec![("enabled", value(/*v*/ false))]),
         (
-            "features",
-            vec![("plugin_discovery_prefetch", value(/*v*/ false))],
-        ),
-        (
             "otel",
             vec![
                 ("exporter", value("none")),

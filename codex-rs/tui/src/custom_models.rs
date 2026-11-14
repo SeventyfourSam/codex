@@ -1,5 +1,7 @@
 //! Explicit fork catalog refreshes with compatibility for an unmodified remote server.
 
+use crate::app_server_session::ThreadParamsMode;
+use crate::app_server_session::model_preset_from_api_model;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
@@ -8,27 +10,43 @@ use codex_app_server_protocol::CustomModelRefreshPurpose;
 use codex_app_server_protocol::ModelListParams;
 use codex_app_server_protocol::ModelListResponse;
 use codex_app_server_protocol::RequestId;
+use codex_protocol::openai_models::ModelPreset;
 use serde::de::DeserializeOwned;
-use std::future::Future;
 
-/// Keep the upstream request and its parameters at the startup call site.
-pub(crate) trait StartupModelsRequestExt {
-    fn custom_startup_request<T: DeserializeOwned>(
-        &self,
-        request: ClientRequest,
-    ) -> impl Future<Output = Result<T, TypedRequestError>>;
+pub(crate) async fn startup(
+    mode: ThreadParamsMode,
+    handle: AppServerRequestHandle,
+    request_id: RequestId,
+) -> Result<Vec<ModelPreset>, TypedRequestError> {
+    list_models(mode, handle, request_id, CustomModelRefreshPurpose::Startup).await
 }
 
-impl StartupModelsRequestExt for AppServerRequestHandle {
-    async fn custom_startup_request<T: DeserializeOwned>(
-        &self,
-        request: ClientRequest,
-    ) -> Result<T, TypedRequestError> {
-        request_models(self, request, CustomModelRefreshPurpose::Startup).await
+pub(crate) async fn manual(
+    mode: ThreadParamsMode,
+    handle: AppServerRequestHandle,
+    request_id: RequestId,
+) -> Result<Vec<ModelPreset>, TypedRequestError> {
+    list_models(mode, handle, request_id, CustomModelRefreshPurpose::Manual).await
+}
+
+async fn list_models(
+    mode: ThreadParamsMode,
+    handle: AppServerRequestHandle,
+    request_id: RequestId,
+    purpose: CustomModelRefreshPurpose,
+) -> Result<Vec<ModelPreset>, TypedRequestError> {
+    if mode == ThreadParamsMode::Cloud {
+        return crate::app_server_session::models::list(mode, handle, request_id).await;
     }
+    let response = fetch_models(handle, request_id, purpose).await?;
+    Ok(response
+        .data
+        .into_iter()
+        .map(model_preset_from_api_model)
+        .collect())
 }
 
-pub(crate) async fn fetch_models(
+async fn fetch_models(
     handle: AppServerRequestHandle,
     request_id: RequestId,
     purpose: CustomModelRefreshPurpose,

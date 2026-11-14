@@ -111,6 +111,7 @@ mod approvals;
 mod async_questions;
 mod async_replies;
 mod base;
+mod delegated_message;
 mod dynamic;
 mod exec;
 mod hook_cell;
@@ -132,6 +133,7 @@ pub(crate) use activity_details::ActivityDetails;
 pub(crate) use activity_preview::ActivityDisclosure;
 pub(crate) use approvals::*;
 pub(crate) use base::*;
+pub(crate) use delegated_message::DelegatedMessageCell;
 pub(crate) use dynamic::DynamicToolCallCell;
 pub(crate) use exec::*;
 pub(crate) use hook_cell::HookCell;
@@ -258,6 +260,11 @@ pub(crate) trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
         } else {
             self.compact_hyperlink_lines(width)
         }
+    }
+
+    /// Output-free descriptions of individual tool invocations, in transcript order.
+    fn tool_call_labels(&self) -> Vec<String> {
+        Vec::new()
     }
 
     /// Stable, namespaced member identities used to retain disclosure across grouping and replay.
