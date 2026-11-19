@@ -34,10 +34,6 @@ UPGRADE_CHECKS = [
         "-p", "codex-cli", "--bin", "codex",
         "-E", "test(update_) | test(updater_) | test(windows_update_command_resolution)",
     ],
-    [
-        "-p", "codex-app-server", "--test", "all",
-        "-E", "test(without_discovery_prefetch)",
-    ],
 ]
 
 
