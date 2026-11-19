@@ -2058,6 +2058,7 @@ dependencies = [
  "codex-http-client",
  "codex-protocol",
  "codex-utils-rustls-provider",
+ "codex-utils-string",
  "codex-websocket-client",
  "eventsource-stream",
  "futures",
@@ -2219,6 +2220,7 @@ dependencies = [
  "codex-core",
  "codex-exec-server",
  "codex-feedback",
+ "codex-http-client",
  "codex-login",
  "codex-protocol",
  "codex-uds",
@@ -3853,6 +3855,7 @@ dependencies = [
  "codex-protocol",
  "codex-protocol-test-support",
  "codex-utils-absolute-path",
+ "codex-utils-model-facing-id",
  "pretty_assertions",
  "schemars 0.8.22",
  "serde",
@@ -3879,6 +3882,8 @@ dependencies = [
  "http 1.4.0",
  "insta",
  "pretty_assertions",
+ "schemars 0.8.22",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
@@ -3964,6 +3969,19 @@ dependencies = [
  "url",
  "windows-sys 0.61.2",
  "zstd",
+]
+
+[[package]]
+name = "codex-http-headers-helper"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-utils-process",
+ "codex-utils-pty",
+ "http 1.4.0",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -4551,8 +4569,10 @@ dependencies = [
  "chrono",
  "codex-api",
  "codex-http-client",
+ "codex-http-headers-helper",
  "codex-protocol",
  "codex-utils-absolute-path",
+ "codex-utils-process",
  "codex-utils-stream-parser",
  "codex-utils-string",
  "eventsource-stream",
@@ -4648,6 +4668,7 @@ dependencies = [
  "codex-utils-template",
  "pretty_assertions",
  "tracing",
+ "whoami 1.6.1",
 ]
 
 [[package]]
@@ -4664,6 +4685,7 @@ dependencies = [
  "codex-network-proxy",
  "codex-utils-absolute-path",
  "codex-utils-image",
+ "codex-utils-model-facing-id",
  "codex-utils-path-uri",
  "codex-utils-redacted-string",
  "codex-utils-string",
@@ -4791,6 +4813,7 @@ dependencies = [
  "codex-config",
  "codex-exec-server",
  "codex-http-client",
+ "codex-http-headers-helper",
  "codex-keyring-store",
  "codex-network-proxy",
  "codex-otel",
@@ -5201,6 +5224,7 @@ dependencies = [
  "chrono",
  "clap",
  "codex-ansi-escape",
+ "codex-api",
  "codex-app-server-client",
  "codex-app-server-daemon",
  "codex-app-server-protocol",
@@ -5229,6 +5253,7 @@ dependencies = [
  "codex-models-manager",
  "codex-otel",
  "codex-plugin",
+ "codex-prompts",
  "codex-protocol",
  "codex-protocol-test-support",
  "codex-realtime-webrtc",
