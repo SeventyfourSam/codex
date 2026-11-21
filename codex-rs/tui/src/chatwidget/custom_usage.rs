@@ -71,7 +71,11 @@ impl ChatWidget {
     }
 
     pub(crate) fn custom_usage_enabled(&self) -> bool {
-        self.turn_lifecycle.custom_usage.enabled
+        self.custom_usage.enabled
+    }
+
+    pub(super) fn reset_custom_usage(&mut self) {
+        self.custom_usage.last_refreshed_turn = None;
     }
 
     pub(super) fn open_custom_usage_analytics(
@@ -99,14 +103,9 @@ impl ChatWidget {
             && !replayed
             && status != TurnStatus::InProgress
             && self.should_prefetch_rate_limits()
-            && self
-                .turn_lifecycle
-                .custom_usage
-                .last_refreshed_turn
-                .as_deref()
-                != Some(turn_id)
+            && self.custom_usage.last_refreshed_turn.as_deref() != Some(turn_id)
         {
-            self.turn_lifecycle.custom_usage.last_refreshed_turn = Some(turn_id.to_owned());
+            self.custom_usage.last_refreshed_turn = Some(turn_id.to_owned());
             self.app_event_tx.send(AppEvent::RefreshRateLimits {
                 origin: RateLimitRefreshOrigin::Periodic,
             });

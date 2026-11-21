@@ -31,6 +31,9 @@ use crate::outgoing_message::ThreadScopedOutgoingMessageSender;
 use crate::thread_state::ThreadListenerCommand;
 use crate::thread_state::ThreadStateManager;
 
+#[path = "custom_output_speed.rs"]
+mod custom_output_speed;
+
 pub(crate) struct ThreadExtensionDependencies {
     pub(crate) sample_responses: Arc<crate::thread_sample::SampleResponseRegistry>,
     pub(crate) event_sink: Arc<dyn ExtensionEventSink>,
@@ -104,6 +107,17 @@ pub(crate) fn thread_extensions(
         git_attribution_base_url,
         http_client_factory,
     );
+    if config.features.enabled(codex_features::Feature::GuardianV3) {
+        let board_manager = thread_manager.clone();
+        codex_guardian_v3::install(
+            &mut builder,
+            thread_manager.clone(),
+            config.sqlite_config().clone(),
+            move |root| {
+                codex_agent_message_board_host::local_board_host(board_manager.clone(), root)
+            },
+        );
+    }
     codex_guardian_v2::install(&mut builder, auth_manager.clone(), thread_manager);
     codex_memories_extension::install(&mut builder, codex_otel::global());
     codex_mcp_extension::install(&mut builder);
@@ -139,7 +153,7 @@ pub(crate) fn thread_extensions(
         },
     );
     builder.model_request_contributor(sample_responses);
-    builder.model_request_contributor(Arc::new(crate::custom_output_speed::OutputSpeed));
+    builder.model_request_contributor(Arc::new(custom_output_speed::OutputSpeed));
     Arc::new(builder.build())
 }
 

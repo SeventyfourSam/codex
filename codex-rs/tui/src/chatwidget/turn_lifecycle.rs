@@ -19,8 +19,8 @@ pub(super) struct TurnLifecycleState {
     pub(super) budget_limited_turn_ids: HashSet<String>,
     /// False records an untimed turn boundary that may still receive a completion label.
     pub(super) rendered_completion_turn_ids: HashMap<String, bool>,
+    pub(super) generated_images: crate::history_cell::PendingGeneratedImages,
     pub(super) goal_status_active_turn_started_at: Option<Instant>,
-    pub(super) custom_usage: super::custom_usage::CustomUsageState,
 }
 
 impl TurnLifecycleState {
@@ -33,8 +33,8 @@ impl TurnLifecycleState {
             admitted_turn_id: None,
             budget_limited_turn_ids: HashSet::new(),
             rendered_completion_turn_ids: HashMap::new(),
+            generated_images: Default::default(),
             goal_status_active_turn_started_at: None,
-            custom_usage: Default::default(),
         }
     }
 
@@ -68,7 +68,7 @@ impl TurnLifecycleState {
         self.admitted_turn_id = None;
         self.budget_limited_turn_ids.clear();
         self.rendered_completion_turn_ids.clear();
-        self.custom_usage.last_refreshed_turn = None;
+        self.generated_images = Default::default();
     }
 
     pub(super) fn set_prevent_idle_sleep(&mut self, enabled: bool) {

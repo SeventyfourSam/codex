@@ -14,7 +14,7 @@ const MAX_BYTES: usize = 12 * 1024 * 1024;
 const CONTINUATION_RESERVE: usize = 1024;
 
 enum Prepared {
-    Direct(String),
+    Direct(Utf8Bytes),
     Replay {
         fields: JsonMap<String, Value>,
         batches: Vec<Vec<Value>>,
@@ -28,7 +28,7 @@ fn invalid(message: impl Into<String>) -> ApiError {
 }
 
 // Keep routing fields before the potentially large input, like the upstream serializer.
-fn encode(fields: &JsonMap<String, Value>, input: &[Value]) -> Result<String, ApiError> {
+fn encode(fields: &JsonMap<String, Value>, input: &[Value]) -> Result<Utf8Bytes, ApiError> {
     #[derive(Serialize)]
     struct Request<'a> {
         #[serde(flatten)]
@@ -36,10 +36,11 @@ fn encode(fields: &JsonMap<String, Value>, input: &[Value]) -> Result<String, Ap
         input: &'a [Value],
     }
     serde_json::to_string(&Request { fields, input })
+        .map(Utf8Bytes::from)
         .map_err(|error| invalid(format!("failed to encode WebSocket replay: {error}")))
 }
 
-fn prepare(text: String, target: usize, maximum: usize) -> Result<Prepared, ApiError> {
+fn prepare(text: Utf8Bytes, target: usize, maximum: usize) -> Result<Prepared, ApiError> {
     if text.len() <= target && !text.contains("data:image/png;base64,") {
         return Ok(Prepared::Direct(text));
     }
@@ -146,7 +147,7 @@ fn prepare(text: String, target: usize, maximum: usize) -> Result<Prepared, ApiE
 pub(super) async fn run(
     ws_stream: &mut WsStream,
     tx_event: mpsc::Sender<Result<ResponseEvent, ApiError>>,
-    request_text: String,
+    request_text: Utf8Bytes,
     idle_timeout: Duration,
     telemetry: Option<Arc<dyn WebsocketTelemetry>>,
     turn_state: Option<&OnceLock<String>>,

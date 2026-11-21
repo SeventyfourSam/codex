@@ -102,6 +102,8 @@ use tracing::warn;
 
 #[path = "in_process_bootstrap.rs"]
 mod bootstrap;
+#[path = "custom_sparkle.rs"]
+mod custom_sparkle;
 
 const IN_PROCESS_CONNECTION_ID: ConnectionId = ConnectionId(0);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -547,7 +549,7 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
         let (sparkle_control_tx, sparkle_control_rx) = mpsc::channel(channel_capacity);
         let processor_sparkle_control = sparkle_control_tx.clone();
         let (outbound_shutdown_tx, outbound_shutdown_rx) = oneshot::channel();
-        let mut outbound_handle = tokio::spawn(crate::custom_sparkle::run_outbound_router(
+        let mut outbound_handle = tokio::spawn(custom_sparkle::run_outbound_router(
             outgoing_rx,
             outbound_connections,
             sparkle_control_rx,
@@ -643,7 +645,7 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
                         crate::startup_warnings::send_warning(&processor_outgoing, message).await;
                     }
                     Some(event) = sparkle_events_rx.recv() => {
-                        crate::custom_sparkle::handle_event(
+                        custom_sparkle::handle_event(
                             event,
                             &processor,
                             &mut sparkle_connections,
@@ -675,7 +677,7 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
                 }
             }
 
-            crate::custom_sparkle::close_connections(
+            custom_sparkle::close_connections(
                 &processor,
                 &mut sparkle_connections,
                 &processor_sparkle_control,
@@ -782,18 +784,18 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
                 queued_message = async {
                     tokio::select! {
                         reply = process_reply_rx.recv() => reply.map(|reply| {
-                            crate::custom_sparkle::classify_reply(reply, IN_PROCESS_CONNECTION_ID)
+                            custom_sparkle::classify_reply(reply, IN_PROCESS_CONNECTION_ID)
                         }),
                         // Leave ordinary replies and events queued until the pending event fits.
-                        event = writer_rx.recv(), if pending_event.is_none() => event.map(crate::custom_sparkle::IncomingReply::Embedded),
+                        event = writer_rx.recv(), if pending_event.is_none() => event.map(custom_sparkle::IncomingReply::Embedded),
                     }
                 } => {
                     let Some(queued_message) = queued_message else {
                         break;
                     };
                     let queued_message = match queued_message {
-                        crate::custom_sparkle::IncomingReply::Embedded(message) => message,
-                        crate::custom_sparkle::IncomingReply::External(message) => {
+                        custom_sparkle::IncomingReply::Embedded(message) => message,
+                        custom_sparkle::IncomingReply::External(message) => {
                             if sparkle_outgoing_tx.send(message).await.is_err() {
                                 break;
                             }
