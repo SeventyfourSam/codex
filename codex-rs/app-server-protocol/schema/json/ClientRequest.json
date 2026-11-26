@@ -2142,6 +2142,17 @@
             "apiKey": {
               "type": "string"
             },
+            "providerId": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/BedrockProviderId"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to Amazon Bedrock Mantle when omitted."
+            },
             "region": {
               "type": "string"
             },
@@ -2166,6 +2177,17 @@
           "properties": {
             "accessKeyId": {
               "type": "string"
+            },
+            "providerId": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/BedrockProviderId"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to Amazon Bedrock Mantle when omitted."
             },
             "region": {
               "type": "string"

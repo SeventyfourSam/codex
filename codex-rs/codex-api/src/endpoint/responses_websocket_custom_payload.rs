@@ -147,7 +147,7 @@ fn prepare(text: Utf8Bytes, target: usize, maximum: usize) -> Result<Prepared, A
 pub(super) async fn run(
     ws_stream: &mut WsStream,
     tx_event: mpsc::Sender<Result<ResponseEvent, ApiError>>,
-    request_text: Utf8Bytes,
+    request: WsRequestText,
     idle_timeout: Duration,
     telemetry: Option<Arc<dyn WebsocketTelemetry>>,
     turn_state: Option<&OnceLock<String>>,
@@ -155,16 +155,19 @@ pub(super) async fn run(
     interrupt: impl Future<Output = ResponseInterrupt> + Clone + Unpin,
     completion: &mut Option<ResponseEvent>,
 ) -> Result<(), ApiError> {
-    let prepared =
-        tokio::task::spawn_blocking(move || prepare(request_text, TARGET_BYTES, MAX_BYTES))
-            .await
-            .map_err(|error| invalid(format!("failed to prepare WebSocket payload: {error}")))??;
+    let WsRequestText { text, private } = request;
+    // Private connector data lives on the matching input item. Retain upstream's
+    // frame log protection on every batch that could carry that item.
+    let wire_request = |text| WsRequestText { text, private };
+    let prepared = tokio::task::spawn_blocking(move || prepare(text, TARGET_BYTES, MAX_BYTES))
+        .await
+        .map_err(|error| invalid(format!("failed to prepare WebSocket payload: {error}")))??;
     let (mut fields, mut batches) = match prepared {
         Prepared::Direct(text) => {
             return super::run_websocket_response_stream(
                 ws_stream,
                 tx_event,
-                text,
+                wire_request(text),
                 idle_timeout,
                 telemetry,
                 turn_state,
@@ -195,7 +198,7 @@ pub(super) async fn run(
         let replay = super::run_websocket_response_stream(
             ws_stream,
             tx_batch,
-            text,
+            wire_request(text),
             idle_timeout,
             telemetry.clone(),
             turn_state,
@@ -257,7 +260,7 @@ pub(super) async fn run(
     super::run_websocket_response_stream(
         ws_stream,
         tx_event,
-        final_text,
+        wire_request(final_text),
         idle_timeout,
         telemetry,
         turn_state,
