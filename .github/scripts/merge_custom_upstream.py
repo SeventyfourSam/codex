@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 import tomllib
+from custom_merge_lock import CARGO_LOCK, resolve_lock_conflict
 from custom_merge_schema import GENERATED_PATHS, regenerate_schema
 from custom_source_policy import verify_source_contracts
 
@@ -55,6 +56,32 @@ def resolve_version_conflict(version: str) -> None:
             raise ValueError("Cargo.toml has conflicts beyond the workspace version")
         Path(MANIFEST).write_bytes(result.stdout)
     git("add", "--", MANIFEST)
+
+
+def resolve_workspace_lock(base: str, upstream: str) -> None:
+    upstream_lock = git("show", f"{upstream}:{CARGO_LOCK}")
+    # Release tags can bump Cargo.toml alone. Match the version Cargo used to
+    # write the official lockfile so the next upgrade avoids version-only churn.
+    lock_version = next(
+        package["version"]
+        for package in tomllib.loads(upstream_lock)["package"]
+        if package["name"] == "codex-cli" and "source" not in package
+    )
+    manifest = Path(MANIFEST)
+    original = manifest.read_bytes()
+    try:
+        manifest.write_text(
+            replace_version(original.decode("utf-8"), lock_version),
+            encoding="utf-8",
+            newline="\n",
+        )
+        resolve_lock_conflict(
+            git("show", f"{base}:{CARGO_LOCK}"),
+            git("show", f"HEAD:{CARGO_LOCK}"),
+            upstream_lock,
+        )
+    finally:
+        manifest.write_bytes(original)
 
 
 def fetch_release(version: str) -> str:
@@ -185,7 +212,7 @@ def merge_release(version: str) -> None:
     source_conflicts = [
         path
         for path in conflicts
-        if not any(
+        if path != CARGO_LOCK and not any(
             path == generated or path.startswith(generated + "/")
             for generated in GENERATED_PATHS
         )
@@ -215,6 +242,8 @@ def merge_release(version: str) -> None:
             "Merged workspace version does not match the requested release"
         )
     verify_source_contracts(upstream)
+    if CARGO_LOCK in conflicts:
+        resolve_workspace_lock(base, upstream)
     regenerate_schema(upstream)
     BASELINE.parent.mkdir(parents=True, exist_ok=True)
     BASELINE.write_text(
